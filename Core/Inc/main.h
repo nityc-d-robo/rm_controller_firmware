@@ -96,7 +96,8 @@ void Error_Handler(void);
     int8_t temp;
     double target_angle;
     int16_t target_rpm;
-    PIDState pidstate;
+    PIDState angle_pid_state;
+    PIDState speed_pid_state
   } MotorState;
 
 /* USER CODE END Private defines */

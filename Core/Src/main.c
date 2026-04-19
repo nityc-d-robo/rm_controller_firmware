@@ -37,9 +37,9 @@
 /* USER CODE BEGIN PD */
 MotorState motorstate[8] = {0};
 float T = 0.001;
-float Kp = 20.0f;
-float Ki = 1.0f;
-float Kd = 1.0f;
+float Kp = 1.0f;
+float Ki = 0.01f;
+float Kd = 0.0f;
 float view1 = 0;
 float view2 = 0;
 /* USER CODE END PD */
@@ -82,8 +82,8 @@ int main(void)
   HAL_Init();
 
   /* USER CODE BEGIN Init */
-  motorstate[1].target_angle = 0;
-  motorstate[1].mode = ANGLE;
+  motorstate[1].target_rpm = 2000;
+  motorstate[1].mode = SPEED;
   /* USER CODE END Init */
 
   /* Configure the system clock */
@@ -169,6 +169,7 @@ void SystemClock_Config(void)
 }
 
 /* USER CODE BEGIN 4 */
+double speed_pid(double e, double *e_pre, double *ie);
 double angle_pid(double e, double *e_pre, double *ie);
 
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
@@ -195,11 +196,11 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
     {
       if (motorstate[i].mode == ANGLE)
       {
-        current[i] = (int16_t)angle_pid((double)(motorstate[i].target_angle - motorstate[i].angle), &motorstate[i].pidstate.e_pre, &motorstate[i].pidstate.ie);
+        current[i] = (int16_t)angle_pid((double)(motorstate[i].target_angle - motorstate[i].angle), &motorstate[i].angle_pid_state.e_pre, &motorstate[i].angle_pid_state.ie);
       }
       else if (motorstate[i].mode == SPEED)
       {
-        current[i] = motorstate[i].rpm;
+        current[i] = (int16_t)speed_pid((double)(motorstate[i].target_rpm - motorstate[i].rpm), &motorstate[i].speed_pid_state.e_pre, &motorstate[i].speed_pid_state.ie);
       }
       else
       {
@@ -219,6 +220,33 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
       HAL_FDCAN_AddMessageToTxFifoQ(&hfdcan2, &TxHeader, tx_datas);
     }
   }
+}
+
+double speed_pid(double e, double *e_pre, double *ie) {
+  double de = (e - *e_pre) / T;
+  *ie = *ie + (e + *e_pre) * T / 2;
+  if (*ie > 10000)
+  {
+    *ie = 10000;
+  }
+  else if (*ie < -10000)
+  {
+    *ie = -10000;
+  }
+  double P = e * Kp;
+  double I = *ie * Ki;
+  double D = de * Kd;
+  int16_t power = P + I + D;
+  if (power > 10000)
+  {
+    power = 10000;
+  }
+  else if (power < -10000)
+  {
+    power = -10000;
+  }
+  *e_pre = e;
+  return power;
 }
 
 double angle_pid(double e, double *e_pre, double *ie)

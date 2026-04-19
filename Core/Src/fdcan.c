@@ -346,7 +346,7 @@ void HAL_FDCAN_RxFifo1Callback(FDCAN_HandleTypeDef *hfdcan2_, uint32_t RxFifo1IT
     );
     uint32_t received_id = RxHeader.Identifier & 0x00F;
     uint16_t angle_raw = (RxData[0] << 8) | RxData[1];
-    motorstate[received_id - 1].angle = (float)angle_raw * 360.0f / 8192.0f;
+    motorstate[received_id - 1].angle = (double)angle_raw * 360.0f / 8192.0f;
     motorstate[received_id - 1].rpm   = (RxData[2] << 8) | RxData[3];
     motorstate[received_id - 1].temp  = (RxData[4] << 8) | RxData[5];
   }
