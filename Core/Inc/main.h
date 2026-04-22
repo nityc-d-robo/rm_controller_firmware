@@ -76,11 +76,13 @@ void Error_Handler(void);
 
   typedef enum
   {
-    None,
+    INIT,
+    STATUS,
+    PWM,
     SPEED,
     ANGLE,
-    CURRENT
-  } Mode;
+    LIM_SW,
+  } mode;
 
   typedef struct
   {
@@ -90,7 +92,7 @@ void Error_Handler(void);
 
   typedef struct
   {
-    Mode mode;
+    mode mode;
     double angle;
     int16_t rpm;
     int8_t temp;
@@ -99,6 +101,17 @@ void Error_Handler(void);
     PIDState angle_pid_state;
     PIDState speed_pid_state
   } MotorState;
+
+  typedef struct {
+    float Kp;
+    float Ki;
+    float Kd;
+  } Gain;
+
+  typedef enum {
+    Stop,
+    Move,
+  } Sit;
 
 /* USER CODE END Private defines */
 

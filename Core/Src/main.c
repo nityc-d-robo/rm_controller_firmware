@@ -37,11 +37,11 @@
 /* USER CODE BEGIN PD */
 MotorState motorstate[8] = {0};
 float T = 0.001;
-float Kp = 1.0f;
-float Ki = 0.01f;
-float Kd = 0.0f;
+Gain angle_gain = {Kp: 5.0f , Ki:1.0f , Kd: 0.2f};
+Gain speed_gain = {Kp: 1.5f , Ki:1.0f , Kd: 0.001f};
 float view1 = 0;
 float view2 = 0;
+Sit motor_sit[8] = { 0 };
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -82,7 +82,7 @@ int main(void)
   HAL_Init();
 
   /* USER CODE BEGIN Init */
-  motorstate[1].target_rpm = 2000;
+  motorstate[1].target_rpm = 500;
   motorstate[1].mode = SPEED;
   /* USER CODE END Init */
 
@@ -112,8 +112,8 @@ int main(void)
     live_rec = ErrorCounters.RxErrorCnt;
 
     if ((hfdcan2.Instance->PSR & FDCAN_PSR_BO) != 0) {
-    HAL_FDCAN_Stop(&hfdcan2);
-    HAL_FDCAN_Start(&hfdcan2);
+      HAL_FDCAN_Stop(&hfdcan2);
+      HAL_FDCAN_Start(&hfdcan2);
     }
 
     /* USER CODE END WHILE */
@@ -169,8 +169,8 @@ void SystemClock_Config(void)
 }
 
 /* USER CODE BEGIN 4 */
-double speed_pid(double e, double *e_pre, double *ie);
-double angle_pid(double e, double *e_pre, double *ie);
+double speed_pid(int8_t motor_id,double e, double *e_pre, double *ie);
+double angle_pid(int8_t motor_id,double e, double *e_pre, double *ie);
 
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 {
@@ -194,27 +194,33 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 
     for (int i = 0; i < 8; i++)
     {
+      if (motorstate[i].rpm == 0) {
+        motor_sit[i] = Stop;
+      } else {
+        motor_sit[i] = Move;
+      }
       if (motorstate[i].mode == ANGLE)
       {
-        current[i] = (int16_t)angle_pid((double)(motorstate[i].target_angle - motorstate[i].angle), &motorstate[i].angle_pid_state.e_pre, &motorstate[i].angle_pid_state.ie);
+        current[i] = (int16_t)angle_pid(i,(double)(motorstate[i].target_angle - motorstate[i].angle), &motorstate[i].angle_pid_state.e_pre, &motorstate[i].angle_pid_state.ie);
       }
       else if (motorstate[i].mode == SPEED)
       {
-        current[i] = (int16_t)speed_pid((double)(motorstate[i].target_rpm - motorstate[i].rpm), &motorstate[i].speed_pid_state.e_pre, &motorstate[i].speed_pid_state.ie);
+        current[i] = (int16_t)speed_pid(i,(double)(motorstate[i].target_rpm - motorstate[i].rpm), &motorstate[i].speed_pid_state.e_pre, &motorstate[i].speed_pid_state.ie);
       }
       else
       {
       }
     }
     view1 = current[1];
-    tx_datas[0] = 0;
-    tx_datas[1] = 0;
+    view2 = motorstate[1].rpm / 19;
+    tx_datas[0] = (current[0] >> 8);
+    tx_datas[1] = (current[0] & 0xFF);
     tx_datas[2] = (current[1] >> 8);
     tx_datas[3] = (current[1] & 0xFF);
-    tx_datas[4] = 0;
-    tx_datas[5] = 0;
-    tx_datas[6] = 0;
-    tx_datas[7] = 0;
+    tx_datas[4] = (current[2] >> 8);
+    tx_datas[5] = (current[2] & 0xFF);
+    tx_datas[6] = (current[3] >> 8);
+    tx_datas[7] = (current[3] & 0xFF);
     if (HAL_FDCAN_GetTxFifoFreeLevel(&hfdcan2) > 0)
     {
       HAL_FDCAN_AddMessageToTxFifoQ(&hfdcan2, &TxHeader, tx_datas);
@@ -222,7 +228,7 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
   }
 }
 
-double speed_pid(double e, double *e_pre, double *ie) {
+double speed_pid(int8_t motor_id,double e, double *e_pre, double *ie) {
   double de = (e - *e_pre) / T;
   *ie = *ie + (e + *e_pre) * T / 2;
   if (*ie > 10000)
@@ -233,9 +239,9 @@ double speed_pid(double e, double *e_pre, double *ie) {
   {
     *ie = -10000;
   }
-  double P = e * Kp;
-  double I = *ie * Ki;
-  double D = de * Kd;
+  double P = e * speed_gain.Kp;
+  double I = *ie * speed_gain.Ki;
+  double D = de * speed_gain.Kd;
   int16_t power = P + I + D;
   if (power > 10000)
   {
@@ -246,11 +252,18 @@ double speed_pid(double e, double *e_pre, double *ie) {
     power = -10000;
   }
   *e_pre = e;
+  if (motor_sit[motor_id] = Stop) { 
+    power = 1000; 
+    motor_sit[motor_id] = Move;
+  }
   return power;
 }
 
-double angle_pid(double e, double *e_pre, double *ie)
+double angle_pid(int8_t motor_id,double e, double *e_pre, double *ie)
 {
+  if (motor_sit[motor_id] = Stop) {
+    motor_sit[motor_id] = Move;
+  }
   if (e > 180)
   {
     e -= 360;
@@ -269,9 +282,9 @@ double angle_pid(double e, double *e_pre, double *ie)
   {
     *ie = -10000;
   }
-  double P = e * Kp;
-  double I = *ie * Ki;
-  double D = de * Kd;
+  double P = e * angle_gain.Kp;
+  double I = *ie * angle_gain.Ki;
+  double D = de * angle_gain.Kd;
   int16_t power = P + I + D;
   if (power > 10000)
   {
@@ -282,6 +295,10 @@ double angle_pid(double e, double *e_pre, double *ie)
     power = -10000;
   }
   *e_pre = e;
+  if (motor_sit[motor_id] = Stop) { 
+    power = 1000; 
+    motor_sit[motor_id] = Move;
+  }
   return power;
 }
 

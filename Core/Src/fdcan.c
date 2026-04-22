@@ -25,6 +25,12 @@
 
 FDCAN_HandleTypeDef hfdcan1;
 FDCAN_HandleTypeDef hfdcan2;
+int8_t view_1;
+int8_t view_2;
+int8_t view_3;
+int8_t view_4;
+int8_t view_5;
+int8_t view_6;
 
 /* FDCAN1 init function */
 void MX_FDCAN1_Init(void)
@@ -66,8 +72,8 @@ void MX_FDCAN1_Init(void)
   sFilter.FilterIndex  = 0;
   sFilter.FilterType   = FDCAN_FILTER_MASK;
   sFilter.FilterConfig = FDCAN_FILTER_TO_RXFIFO0;
-  sFilter.FilterID1    = 0x000;
-  sFilter.FilterID2    = 0x000;
+  sFilter.FilterID1    = 0x00F;
+  sFilter.FilterID2    = 0xFF0;
 
   HAL_FDCAN_ConfigFilter(&hfdcan1, &sFilter);
 
@@ -311,7 +317,6 @@ void HAL_FDCAN_RxFifo0Callback(FDCAN_HandleTypeDef *hfdcan, uint32_t RxFifo0ITs)
   FDCAN_RxHeaderTypeDef RxHeader;
   uint8_t RxData[64];
 
-
     if (RxFifo0ITs & FDCAN_IT_RX_FIFO0_NEW_MESSAGE)
     {
       HAL_FDCAN_GetRxMessage(
@@ -322,11 +327,18 @@ void HAL_FDCAN_RxFifo0Callback(FDCAN_HandleTypeDef *hfdcan, uint32_t RxFifo0ITs)
       );
     
       if (hfdcan->Instance == FDCAN1) {
-      // --- FDCAN1 の処理 ---
-      
+        uint32_t received_id = RxHeader.Identifier;
+        int8_t mode = RxData[2];
+        if (mode == ANGLE) {
+          motorstate[received_id].mode = mode;
+          motorstate[received_id].target_angle = (RxData[4] << 8 ) | RxData[5];
+        } else if (mode == SPEED) {
+          motorstate[received_id].mode = mode;
+          motorstate[received_id].target_rpm = (RxData[4] << 8 ) | RxData[5];
+        }
       } else if (hfdcan->Instance == FDCAN2) {
       // --- FDCAN2 の処理 ---
-            
+        
       }
     
   }
@@ -346,8 +358,9 @@ void HAL_FDCAN_RxFifo1Callback(FDCAN_HandleTypeDef *hfdcan2_, uint32_t RxFifo1IT
     );
     uint32_t received_id = RxHeader.Identifier & 0x00F;
     uint16_t angle_raw = (RxData[0] << 8) | RxData[1];
+    uint16_t rpm_raw = (RxData[2] << 8) | RxData[3];
     motorstate[received_id - 1].angle = (double)angle_raw * 360.0f / 8192.0f;
-    motorstate[received_id - 1].rpm   = (RxData[2] << 8) | RxData[3];
+    motorstate[received_id - 1].rpm   = (double)rpm_raw;
     motorstate[received_id - 1].temp  = (RxData[4] << 8) | RxData[5];
   }
 }
