@@ -359,9 +359,20 @@ void HAL_FDCAN_RxFifo1Callback(FDCAN_HandleTypeDef *hfdcan2_, uint32_t RxFifo1IT
     uint32_t received_id = RxHeader.Identifier & 0x00F;
     uint16_t angle_raw = (RxData[0] << 8) | RxData[1];
     uint16_t rpm_raw = (RxData[2] << 8) | RxData[3];
-    motorstate[received_id - 1].angle = (double)angle_raw * 360.0f / 8192.0f;
+    motorstate[received_id - 1].raw_angle = (double)angle_raw * 360.0f / 8192.0f;
     motorstate[received_id - 1].rpm   = (double)rpm_raw;
     motorstate[received_id - 1].temp  = (RxData[4] << 8) | RxData[5];
+    if (motorstate[received_id - 1].rpm > 0) {
+      if (motorstate[received_id - 1].pre_angle > 300 && motorstate[received_id - 1].raw_angle < 60) {
+        motorstate[received_id - 1].r += 1;
+      }
+    } else if (motorstate[received_id - 1].rpm < 0) {
+      if (motorstate[received_id - 1].pre_angle < 60 && motorstate[received_id - 1].raw_angle > 300) {
+        motorstate[received_id - 1].r -= 1;
+      }
+    }
+    motorstate[received_id - 1].angle = (int)(motorstate[received_id - 1].raw_angle + motorstate[received_id - 1].r * 360) % (int)(360 * 19.204f);
+    motorstate[received_id - 1].pre_angle = motorstate[received_id - 1].raw_angle;
   }
 }
 /* USER CODE END 1 */

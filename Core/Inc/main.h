@@ -94,6 +94,9 @@ void Error_Handler(void);
   {
     mode mode;
     double angle;
+    double r;
+    double pre_angle;
+    double raw_angle;
     int16_t rpm;
     int8_t temp;
     double target_angle;
