@@ -27,6 +27,8 @@
 /* USER CODE BEGIN Includes */
 #include <stdio.h>
 #include <stdlib.h>
+#include "math.h"
+#include <stdbool.h>
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -37,13 +39,16 @@
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
 MotorState motorstate[8] = {0};
-float T = 0.001;
-Gain angle_gain = {Kp: 0.5f , Ki:0.2f, Kd: 0.2f};
-Gain speed_gain = {Kp: 1.5f , Ki:1.0f , Kd: 0.001f};
+float T_6 = 0.002;
+float T_16 = 0.004;
+Gain angle_gain = {.Kp = 0.6f, .Ki = 0.3f, .Kd = 0.0f};
+Gain speed_gain = {.Kp = 15.0f, .Ki = 15.0f, .Kd = 0.0f};
 float view1 = 0;
 float view2 = 0;
-Sit motor_sit[8] = { 0 };
-float ε = 100;
+volatile bool tim6 = 0;
+volatile bool tim16 = 0;
+Sit motor_sit[8] = {0};
+// float ε = 20;
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -55,13 +60,18 @@ float ε = 100;
 
 /* USER CODE BEGIN PV */
 FDCAN_ErrorCountersTypeDef ErrorCounters;
-uint32_t live_tec=0;
-uint32_t live_rec=0;
+uint32_t live_tec = 0;
+uint32_t live_rec = 0;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 /* USER CODE BEGIN PFP */
+void speed_pid_task(void);
+void angle_pid_task(void);
+float speed_pid(int8_t motor_id, float e, float *e_pre, float *ie);
+float angle_pid(int8_t motor_id, float e, float *e_pre, float *ie);
+float pid(int8_t motor_id, float e, float *e_pre, float *ie, float p_gain, float i_gain, float d_gain, float t);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -84,7 +94,7 @@ int main(void)
   HAL_Init();
 
   /* USER CODE BEGIN Init */
-  motorstate[1].target_rpm = 500;
+  motorstate[1].target_angle = 0;
   motorstate[1].mode = SPEED;
   /* USER CODE END Init */
 
@@ -101,8 +111,10 @@ int main(void)
   MX_FDCAN2_Init();
   MX_I2C1_Init();
   MX_TIM6_Init();
+  MX_TIM16_Init();
   /* USER CODE BEGIN 2 */
   HAL_TIM_Base_Start_IT(&htim6);
+  HAL_TIM_Base_Start_IT(&htim16);
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -112,15 +124,17 @@ int main(void)
     HAL_FDCAN_GetErrorCounters(&hfdcan2, &ErrorCounters);
     live_tec = ErrorCounters.TxErrorCnt;
     live_rec = ErrorCounters.RxErrorCnt;
-
-    if ((hfdcan2.Instance->PSR & FDCAN_PSR_BO) != 0) {
+    if ((hfdcan2.Instance->PSR & FDCAN_PSR_BO) != 0)
+    {
       HAL_FDCAN_Stop(&hfdcan2);
       HAL_FDCAN_Start(&hfdcan2);
     }
+  }
 
     /* USER CODE END WHILE */
+
     /* USER CODE BEGIN 3 */
-  }
+
   /* USER CODE END 3 */
 }
 
@@ -171,143 +185,151 @@ void SystemClock_Config(void)
 }
 
 /* USER CODE BEGIN 4 */
-double speed_pid(int8_t motor_id,double e, double *e_pre, double *ie);
-double angle_pid(int8_t motor_id,double e, double *e_pre, double *ie);
-
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 {
   if (htim->Instance == TIM6)
   {
-    HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_5); // デバッグ
-    FDCAN_TxHeaderTypeDef TxHeader;
-    uint8_t tx_datas[64] = {0};
+    speed_pid_task();
+  }
+  if (htim->Instance == TIM16)
+  {
+    angle_pid_task();
+  }
+}
 
-    TxHeader.Identifier = 0x200;             // 送信ID
-    TxHeader.IdType = FDCAN_STANDARD_ID;     // 標準ID
-    TxHeader.TxFrameType = FDCAN_DATA_FRAME; // データフレーム
-    TxHeader.DataLength = FDCAN_DLC_BYTES_8; // DLC
-    TxHeader.ErrorStateIndicator = FDCAN_ESI_ACTIVE;
-    TxHeader.BitRateSwitch = FDCAN_BRS_OFF; // BRS設定
-    TxHeader.FDFormat = FDCAN_CLASSIC_CAN;  // Classic / FD
-    TxHeader.TxEventFifoControl = FDCAN_NO_TX_EVENTS;
-    TxHeader.MessageMarker = 0;
+void speed_pid_task(void)
+{
+  HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_5); // デバッグ
+  FDCAN_TxHeaderTypeDef TxHeader;
+  uint8_t tx_datas[64] = {0};
 
-    int16_t current[8] = {0};
+  TxHeader.Identifier = 0x200;             // 送信ID
+  TxHeader.IdType = FDCAN_STANDARD_ID;     // 標準ID
+  TxHeader.TxFrameType = FDCAN_DATA_FRAME; // データフレーム
+  TxHeader.DataLength = FDCAN_DLC_BYTES_8; // DLC
+  TxHeader.ErrorStateIndicator = FDCAN_ESI_ACTIVE;
+  TxHeader.BitRateSwitch = FDCAN_BRS_OFF; // BRS設定
+  TxHeader.FDFormat = FDCAN_CLASSIC_CAN;  // Classic / FD
+  TxHeader.TxEventFifoControl = FDCAN_NO_TX_EVENTS;
+  TxHeader.MessageMarker = 0;
 
-    for (int i = 0; i < 8; i++)
+  int16_t current[8] = {0};
+
+  for (int i = 0; i < 8; i++)
+  {
+    if (motorstate[i].rpm == 0)
     {
-      if (motorstate[i].rpm == 0) {
-        motor_sit[i] = Stop;
-      } else {
-        motor_sit[i] = Move;
-      }
-      if (motorstate[i].mode == ANGLE)
-      {
-        current[i] = (int16_t)angle_pid(i,(double)(motorstate[i].target_angle * 19.204 - motorstate[i].angle), &motorstate[i].angle_pid_state.e_pre, &motorstate[i].angle_pid_state.ie);
-      }
-      else if (motorstate[i].mode == SPEED)
-      {
-        current[i] = (int16_t)speed_pid(i,(double)(motorstate[i].target_rpm - motorstate[i].rpm), &motorstate[i].speed_pid_state.e_pre, &motorstate[i].speed_pid_state.ie);
-      }
-      else
-      {
-      }
+      motor_sit[i] = Stop;
     }
-    view1 = current[1];
-    view2 = motorstate[1].rpm / 19;
-    tx_datas[0] = (current[0] >> 8);
-    tx_datas[1] = (current[0] & 0xFF);
-    tx_datas[2] = (current[1] >> 8);
-    tx_datas[3] = (current[1] & 0xFF);
-    tx_datas[4] = (current[2] >> 8);
-    tx_datas[5] = (current[2] & 0xFF);
-    tx_datas[6] = (current[3] >> 8);
-    tx_datas[7] = (current[3] & 0xFF);
-    if (HAL_FDCAN_GetTxFifoFreeLevel(&hfdcan2) > 0)
+    else
     {
-      HAL_FDCAN_AddMessageToTxFifoQ(&hfdcan2, &TxHeader, tx_datas);
+      motor_sit[i] = Move;
+    }
+    if (motorstate[i].mode == ANGLE)
+    {
+      current[i] = (int16_t)speed_pid(i, (float)(motorstate[i].target_rpm - motorstate[i].rpm), &motorstate[i].speed_pid_state.e_pre, &motorstate[i].speed_pid_state.ie);
+    }
+    else if (motorstate[i].mode == SPEED)
+    {
+      current[i] = (int16_t)speed_pid(i, (float)(motorstate[i].target_rpm - motorstate[i].rpm), &motorstate[i].speed_pid_state.e_pre, &motorstate[i].speed_pid_state.ie);
+    }
+  }
+  view1 = current[1];
+  view2 = motorstate[1].angle / GEAR_RATIO;
+  tx_datas[0] = (current[0] >> 8);
+  tx_datas[1] = (current[0] & 0xFF);
+  tx_datas[2] = (current[1] >> 8);
+  tx_datas[3] = (current[1] & 0xFF);
+  tx_datas[4] = (current[2] >> 8);
+  tx_datas[5] = (current[2] & 0xFF);
+  tx_datas[6] = (current[3] >> 8);
+  tx_datas[7] = (current[3] & 0xFF);
+  if (HAL_FDCAN_GetTxFifoFreeLevel(&hfdcan2) > 0)
+  {
+    HAL_FDCAN_AddMessageToTxFifoQ(&hfdcan2, &TxHeader, tx_datas);
+  }
+}
+
+void angle_pid_task(void)
+{
+  for (int i = 0; i < 8; i++)
+  {
+    if (motorstate[i].mode == ANGLE)
+    {
+      motorstate[i].target_rpm = (int16_t)angle_pid(i, (float)(motorstate[i].target_angle * GEAR_RATIO - motorstate[i].angle), &motorstate[i].angle_pid_state.e_pre, &motorstate[i].angle_pid_state.ie);
     }
   }
 }
 
-double speed_pid(int8_t motor_id,double e, double *e_pre, double *ie) {
-  double de = (e - *e_pre) / T;
-  *ie = *ie + (e + *e_pre) * T / 2;
-  if (*ie > 10000)
+float speed_pid(int8_t motor_id, float e, float *e_pre, float *ie)
+{
+  if (*ie > MAX_SPEED_IE)
   {
-    *ie = 10000;
+    *ie = MAX_SPEED_IE;
   }
-  else if (*ie < -10000)
+  else if (*ie < MAX_SPEED_IE * -1)
   {
-    *ie = -10000;
+    *ie = MAX_SPEED_IE * -1;
   }
-  double P = e * speed_gain.Kp;
-  double I = *ie * speed_gain.Ki;
-  double D = de * speed_gain.Kd;
-  int16_t power = P + I + D;
-  if (power > 1000)
+  int16_t power = pid(motor_id, e, e_pre, ie, speed_gain.Kp, speed_gain.Ki, speed_gain.Kd, T_6);
+  if (power > MAX_POWER)
   {
-    power = 1000;
+    power = MAX_POWER;
   }
-  else if (power < -1000)
+  else if (power < MAX_POWER * -1)
   {
-    power = -1000;
+    power = MAX_POWER * -1;
   }
   *e_pre = e;
-  if (motor_sit[motor_id] == Stop) { 
-    power = 1000; 
-    motor_sit[motor_id] = Move;
-  }
   return power;
 }
 
-double angle_pid(int8_t motor_id,double e, double *e_pre, double *ie)
+float angle_pid(int8_t motor_id, float e, float *e_pre, float *ie)
 {
-  if (motor_sit[motor_id] == Stop) {
+  if (motor_sit[motor_id] == Stop)
+  {
     motor_sit[motor_id] = Move;
   }
-  if (e > 3457)
+  if (e > RESOLUTION / 2)
   {
-    e -= 6913;
+    e -= RESOLUTION;
   }
-  else if (e < -3457)
+  else if (e < RESOLUTION / -2)
   {
-    e += 6913;
+    e += RESOLUTION;
   }
-  double de = (e - *e_pre) / T;
-  *ie = *ie + (e + *e_pre) * T / 2;
-  if (*ie > 10000)
+  if (*ie > MAX_ANGLE_IE)
   {
-    *ie = 10000;
+    *ie = MAX_ANGLE_IE;
   }
-  else if (*ie < -10000)
+  else if (*ie < MAX_ANGLE_IE * -1)
   {
-    *ie = -10000;
+    *ie = MAX_ANGLE_IE * -1;
   }
-  double P = e * angle_gain.Kp;
-  double I = *ie * angle_gain.Ki;
-  double D = de * angle_gain.Kd;
-  int16_t power = P + I + D;
-  if (abs(e) > ε) {
-    if (e < 0) {
-      power -= 500;
-    } else if ( e > 0 ) {
-      power += 500;
-    }
-  }
-  if (power > 10000)
+  int16_t rpm = pid(motor_id, e, e_pre, ie, angle_gain.Kp, angle_gain.Ki, angle_gain.Kd, T_16);
+  if (rpm > MAX_RPM)
   {
-    power = 10000;
+    rpm = MAX_RPM;
   }
-  else if (power < -10000)
+  else if (rpm < MAX_RPM * -1)
   {
-    power = -10000;
+    rpm = MAX_RPM * -1;
   }
   *e_pre = e;
-  if (motor_sit[motor_id] == Stop) { 
-    power = 1000;
-    motor_sit[motor_id] = Move;
+  return rpm;
+}
+
+float pid(int8_t motor_id, float e, float *e_pre, float *ie, float p_gain, float i_gain, float d_gain, float t)
+{
+  float de = (e - *e_pre) / t;
+  if (fabsf(e) < I_MAX_ERROR && fabsf(e) > I_MIN_ERROR)
+  {
+    *ie = *ie + (e + *e_pre) * t / 2;
   }
+  float P = e * p_gain;
+  float I = *ie * i_gain;
+  float D = de * d_gain;
+  float power = P + I + D;
   return power;
 }
 

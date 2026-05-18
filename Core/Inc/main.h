@@ -74,6 +74,16 @@ void Error_Handler(void);
 
 /* USER CODE BEGIN Private defines */
 
+#define GEAR_RATIO 19.204f
+#define ENCODER_RESOLUTION 8192.0f
+#define RESOLUTION 6913
+#define MAX_RPM 3000
+#define MAX_POWER 5000
+#define MAX_SPEED_IE 10000
+#define MAX_ANGLE_IE 1500
+#define I_MAX_ERROR 500.0f
+#define I_MIN_ERROR 50.0f
+
   typedef enum
   {
     INIT,
@@ -86,35 +96,41 @@ void Error_Handler(void);
 
   typedef struct
   {
-    double  ie;
-    double e_pre;
+    float ie;
+    float e_pre;
   } PIDState;
+
+  typedef enum
+  {
+    Stop,
+    Move,
+  } Sit;
 
   typedef struct
   {
     mode mode;
-    double angle;
-    double r;
-    double pre_angle;
-    double raw_angle;
+    float angle;
+    int16_t resolution;
+    float pre_angle;
+    float pre_raw_angle;
+    float raw_angle;
     int16_t rpm;
     int8_t temp;
-    double target_angle;
+    float half_target_angle;
+    float target_angle;
     int16_t target_rpm;
     PIDState angle_pid_state;
-    PIDState speed_pid_state
+    PIDState speed_pid_state;
+    int16_t angle_zero;
+    Sit sub_sit;
   } MotorState;
 
-  typedef struct {
+  typedef struct
+  {
     float Kp;
     float Ki;
     float Kd;
   } Gain;
-
-  typedef enum {
-    Stop,
-    Move,
-  } Sit;
 
 /* USER CODE END Private defines */
 
