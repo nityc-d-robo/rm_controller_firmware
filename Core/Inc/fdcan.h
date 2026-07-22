@@ -29,7 +29,7 @@ extern "C" {
 #include "main.h"
 
 /* USER CODE BEGIN Includes */
-
+#include <stdbool.h>
 /* USER CODE END Includes */
 
 extern FDCAN_HandleTypeDef hfdcan1;
@@ -38,6 +38,9 @@ extern FDCAN_HandleTypeDef hfdcan2;
 
 /* USER CODE BEGIN Private defines */
 extern MotorState motorstate[8];
+extern Gain speed_gain;
+extern Gain angle_gain;
+extern bool return_rpms;
 /* USER CODE END Private defines */
 
 void MX_FDCAN1_Init(void);

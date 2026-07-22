@@ -45,11 +45,15 @@ Gain angle_gain = {.Kp = 0.6f, .Ki = 0.3f, .Kd = 0.0f};
 Gain speed_gain = {.Kp = 10.0f, .Ki = 20.0f, .Kd = 0.0f};
 float view1 = 0;
 float view2 = 0;
+float view3 = 0;
+float view4 = 0;
 volatile bool tim6 = 0;
 volatile bool tim16 = 0;
 Sit motor_sit[8] = {0};
+bool return_rpms = false;
 HAL_StatusTypeDef status;
 uint32_t TxMailbox;
+uint8_t return_count = 0;
 // float ε = 20;
 /* USER CODE END PD */
 
@@ -199,6 +203,34 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
   }
 }
 
+void returnrpms(void) {
+  FDCAN_TxHeaderTypeDef TxHeader;
+  uint8_t tx_datas[64] = {0};
+
+  TxHeader.Identifier = 0x60;             // 送信ID
+  TxHeader.IdType = FDCAN_STANDARD_ID;     // 標準ID
+  TxHeader.TxFrameType = FDCAN_DATA_FRAME; // データフレーム
+  TxHeader.DataLength = FDCAN_DLC_BYTES_8; // DLC
+  TxHeader.ErrorStateIndicator = FDCAN_ESI_ACTIVE;
+  TxHeader.BitRateSwitch = FDCAN_BRS_OFF; // BRS設定
+  TxHeader.FDFormat = FDCAN_CLASSIC_CAN;  // Classic / FD
+  TxHeader.TxEventFifoControl = FDCAN_NO_TX_EVENTS;
+  TxHeader.MessageMarker = 0;
+
+  tx_datas[0] = (motorstate[0].rpm >> 8);
+  tx_datas[1] = (motorstate[0].rpm & 0xFF);
+  tx_datas[2] = (motorstate[1].rpm >> 8);
+  tx_datas[3] = (motorstate[1].rpm & 0xFF);
+  tx_datas[4] = (motorstate[2].rpm >> 8);
+  tx_datas[5] = (motorstate[2].rpm & 0xFF);
+  tx_datas[6] = (motorstate[3].rpm >> 8);
+  tx_datas[7] = (motorstate[3].rpm & 0xFF);
+  if (HAL_FDCAN_GetTxFifoFreeLevel(&hfdcan1) > 0)
+  {
+    HAL_FDCAN_AddMessageToTxFifoQ(&hfdcan1, &TxHeader, tx_datas);
+  }
+}
+
 void speed_pid_task(void)
 {
   HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_5); // デバッグ
@@ -233,11 +265,20 @@ void speed_pid_task(void)
     }
     else if (motorstate[i].mode == SPEED)
     {
+      //if (return_count >= 100) {
+      if (return_rpms == true) {
+//        returnrpms();
+        return_rpms = false;
+      //  return_count = 0;
+      }
+      //return_count += 1;
       current[i] = (int16_t)speed_pid(i, (float)(motorstate[i].target_rpm - motorstate[i].rpm), &motorstate[i].speed_pid_state.e_pre, &motorstate[i].speed_pid_state.ie);
     }
   }
   view1 = current[0];
   view2 = current[1];
+  view3 = current[2];
+  view4 = current[3];
   tx_datas[0] = (current[0] >> 8);
   tx_datas[1] = (current[0] & 0xFF);
   tx_datas[2] = (current[1] >> 8);

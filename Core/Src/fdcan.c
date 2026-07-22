@@ -22,6 +22,7 @@
 
 /* USER CODE BEGIN 0 */
 #include "math.h"
+#include <stdbool.h>
 FDCAN_HandleTypeDef hfdcan1;
 FDCAN_HandleTypeDef hfdcan2;
 int8_t view_1;
@@ -80,8 +81,8 @@ void MX_FDCAN1_Init(void)
   sFilter.FilterIndex = 0;
   sFilter.FilterType = FDCAN_FILTER_MASK;
   sFilter.FilterConfig = FDCAN_FILTER_TO_RXFIFO0;
-  sFilter.FilterID1 = 0x00F;
-  sFilter.FilterID2 = 0xFF0;
+  sFilter.FilterID1 = 0x01F;
+  sFilter.FilterID2 = 0xFE0;
 
   HAL_FDCAN_ConfigFilter(&hfdcan1, &sFilter);
 
@@ -334,17 +335,42 @@ void HAL_FDCAN_RxFifo0Callback(FDCAN_HandleTypeDef *hfdcan, uint32_t RxFifo0ITs)
     {
       uint32_t received_id = RxHeader.Identifier;
       int8_t mode = RxData[2];
-      if (mode == ANGLE)
-      {
-        double pre_target_angle = motorstate[received_id].target_angle;
-        motorstate[received_id].mode = mode;
-        motorstate[received_id].target_angle = (int16_t)((RxData[4] << 8) | RxData[5]);
-        motorstate[received_id].half_target_angle = pre_target_angle - motorstate[received_id].target_angle;
-      }
-      else if (mode == SPEED)
-      {
-        motorstate[received_id].mode = mode;
-        motorstate[received_id].target_rpm = (int16_t)((RxData[4] << 8) | RxData[5]) * gear_ratio;
+      if (((received_id >> 4) & 0x01) == 1) {
+        uint8_t gain_kind = (received_id & 0x0F);
+        if (mode == ANGLE)
+        {
+          if (gain_kind == 0) {
+            angle_gain.Kp = ((RxData[4] << 8) | RxData[5]);
+          } else if (gain_kind == 1) {
+            angle_gain.Ki = ((RxData[4] << 8) | RxData[5]);
+          } else if (gain_kind == 2) {
+            angle_gain.Kd = ((RxData[4] << 8) | RxData[5]);
+          }
+        }
+        else if (mode == SPEED)
+        {
+          if (gain_kind == 0) {
+            speed_gain.Kp = ((RxData[4] << 8) | RxData[5]);
+          } else if (gain_kind == 1) {
+            speed_gain.Ki = ((RxData[4] << 8) | RxData[5]);
+          } else if (gain_kind == 2) {
+            speed_gain.Kd = ((RxData[4] << 8) | RxData[5]);
+          }
+        }
+      } else {
+        if (mode == ANGLE)
+        {
+          double pre_target_angle = motorstate[received_id].target_angle;
+          motorstate[received_id].mode = mode;
+          motorstate[received_id].target_angle = (int16_t)((RxData[4] << 8) | RxData[5]);
+          motorstate[received_id].half_target_angle = pre_target_angle - motorstate[received_id].target_angle;
+        }
+        else if (mode == SPEED)
+        {
+          return_rpms = true;
+          motorstate[received_id].mode = mode;
+          motorstate[received_id].target_rpm = (int16_t)((RxData[4] << 8) | RxData[5] ) * gear_ratio;
+        }
       }
     }
     else if (hfdcan->Instance == FDCAN2)
