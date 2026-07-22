@@ -30,7 +30,11 @@ int8_t view_3;
 int8_t view_4;
 int8_t view_5;
 int8_t view_6;
+int16_t rpms[5] = {0};
+int16_t rpms_sum;
+int16_t now_rpm;
 #define gear_ratio 19.204f
+#define alpha 0.2f
 /* USER CODE END 0 */
 
 FDCAN_HandleTypeDef hfdcan1;
@@ -321,10 +325,10 @@ void HAL_FDCAN_RxFifo0Callback(FDCAN_HandleTypeDef *hfdcan, uint32_t RxFifo0ITs)
   if (RxFifo0ITs & FDCAN_IT_RX_FIFO0_NEW_MESSAGE)
   {
     HAL_FDCAN_GetRxMessage(
-        hfdcan,
-        FDCAN_RX_FIFO0,
-        &RxHeader,
-        RxData);
+      hfdcan,
+      FDCAN_RX_FIFO0,
+      &RxHeader,
+      RxData);
 
     if (hfdcan->Instance == FDCAN1)
     {
@@ -334,13 +338,13 @@ void HAL_FDCAN_RxFifo0Callback(FDCAN_HandleTypeDef *hfdcan, uint32_t RxFifo0ITs)
       {
         double pre_target_angle = motorstate[received_id].target_angle;
         motorstate[received_id].mode = mode;
-        motorstate[received_id].target_angle = (RxData[4] << 8) | RxData[5];
+        motorstate[received_id].target_angle = (int16_t)((RxData[4] << 8) | RxData[5]);
         motorstate[received_id].half_target_angle = pre_target_angle - motorstate[received_id].target_angle;
       }
       else if (mode == SPEED)
       {
         motorstate[received_id].mode = mode;
-        motorstate[received_id].target_rpm = (RxData[4] << 8) | RxData[5];
+        motorstate[received_id].target_rpm = (int16_t)((RxData[4] << 8) | RxData[5]) * gear_ratio;
       }
     }
     else if (hfdcan->Instance == FDCAN2)
@@ -364,9 +368,23 @@ void HAL_FDCAN_RxFifo1Callback(FDCAN_HandleTypeDef *hfdcan2_, uint32_t RxFifo1IT
         RxData);
     uint32_t received_id = RxHeader.Identifier & 0x00F;
     uint16_t angle_raw = (RxData[0] << 8) | RxData[1];
-    int16_t rpm_raw = (RxData[2] << 8) | RxData[3];
+    now_rpm = (RxData[2] << 8) | RxData[3];
+    //for(int i = 4; i > 0; i--) {
+    //  if (motorstate[received_id - 1].sub_sit == Stop)
+    //  {
+    //    rpms[i] = (RxData[2] << 8) | RxData[3];
+    //  } else {
+    //    rpms[i] = rpms[i - 1];
+    //  }
+    //}
+    //rpms[0] = (RxData[2] << 8) | RxData[3];
+    //rpms_sum = 0;
+    //for (int i = 0; i < 5; i++) {
+    //  rpms_sum += rpms[i];
+    //}
+    //motorstate[received_id - 1].rpm = (float)rpms_sum / 5.0f;
+    motorstate[received_id - 1].rpm = now_rpm * alpha + motorstate[received_id - 1].rpm * (1 - alpha);
     motorstate[received_id - 1].raw_angle = (float)angle_raw * 360.0f / 8192.0f;
-    motorstate[received_id - 1].rpm = (float)rpm_raw;
     motorstate[received_id - 1].temp = (RxData[4] << 8) | RxData[5];
     float diff = motorstate[received_id - 1].raw_angle - motorstate[received_id - 1].pre_raw_angle;
     if (diff < -300)

@@ -82,7 +82,7 @@ void Error_Handler(void);
 #define MAX_SPEED_IE 10000
 #define MAX_ANGLE_IE 1500
 #define I_MAX_ERROR 500.0f
-#define I_MIN_ERROR 50.0f
+#define I_MIN_ERROR 5.0f
 
   typedef enum
   {

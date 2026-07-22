@@ -42,12 +42,14 @@ MotorState motorstate[8] = {0};
 float T_6 = 0.002;
 float T_16 = 0.004;
 Gain angle_gain = {.Kp = 0.6f, .Ki = 0.3f, .Kd = 0.0f};
-Gain speed_gain = {.Kp = 15.0f, .Ki = 15.0f, .Kd = 0.0f};
+Gain speed_gain = {.Kp = 10.0f, .Ki = 20.0f, .Kd = 0.0f};
 float view1 = 0;
 float view2 = 0;
 volatile bool tim6 = 0;
 volatile bool tim16 = 0;
 Sit motor_sit[8] = {0};
+HAL_StatusTypeDef status;
+uint32_t TxMailbox;
 // float ε = 20;
 /* USER CODE END PD */
 
@@ -94,8 +96,8 @@ int main(void)
   HAL_Init();
 
   /* USER CODE BEGIN Init */
-  motorstate[1].target_angle = 0;
-  motorstate[1].mode = SPEED;
+  motorstate[0].target_rpm = 1140;
+  motorstate[0].mode = SPEED;
   /* USER CODE END Init */
 
   /* Configure the system clock */
@@ -234,8 +236,8 @@ void speed_pid_task(void)
       current[i] = (int16_t)speed_pid(i, (float)(motorstate[i].target_rpm - motorstate[i].rpm), &motorstate[i].speed_pid_state.e_pre, &motorstate[i].speed_pid_state.ie);
     }
   }
-  view1 = current[1];
-  view2 = motorstate[1].angle / GEAR_RATIO;
+  view1 = current[0];
+  view2 = current[1];
   tx_datas[0] = (current[0] >> 8);
   tx_datas[1] = (current[0] & 0xFF);
   tx_datas[2] = (current[1] >> 8);
