@@ -23,34 +23,35 @@
 #define __MAIN_H
 
 #ifdef __cplusplus
-extern "C" {
+extern "C"
+{
 #endif
 
 /* Includes ------------------------------------------------------------------*/
 #include "stm32g4xx_hal.h"
 
-/* Private includes ----------------------------------------------------------*/
-/* USER CODE BEGIN Includes */
+  /* Private includes ----------------------------------------------------------*/
+  /* USER CODE BEGIN Includes */
 
-/* USER CODE END Includes */
+  /* USER CODE END Includes */
 
-/* Exported types ------------------------------------------------------------*/
-/* USER CODE BEGIN ET */
+  /* Exported types ------------------------------------------------------------*/
+  /* USER CODE BEGIN ET */
 
-/* USER CODE END ET */
+  /* USER CODE END ET */
 
-/* Exported constants --------------------------------------------------------*/
-/* USER CODE BEGIN EC */
+  /* Exported constants --------------------------------------------------------*/
+  /* USER CODE BEGIN EC */
 
-/* USER CODE END EC */
+  /* USER CODE END EC */
 
-/* Exported macro ------------------------------------------------------------*/
-/* USER CODE BEGIN EM */
+  /* Exported macro ------------------------------------------------------------*/
+  /* USER CODE BEGIN EM */
 
-/* USER CODE END EM */
+  /* USER CODE END EM */
 
-/* Exported functions prototypes ---------------------------------------------*/
-void Error_Handler(void);
+  /* Exported functions prototypes ---------------------------------------------*/
+  void Error_Handler(void);
 
 /* USER CODE BEGIN EFP */
 
@@ -72,7 +73,7 @@ void Error_Handler(void);
 #define FDCAN1_Tx_Pin GPIO_PIN_12
 #define FDCAN1_Tx_GPIO_Port GPIOA
 
-/* USER CODE BEGIN Private defines */
+  /* USER CODE BEGIN Private defines */
 
 #define GEAR_RATIO 19.204f
 #define ENCODER_RESOLUTION 8192.0f
@@ -88,10 +89,9 @@ void Error_Handler(void);
   {
     INIT,
     STATUS,
-    PWM,
+    CURRENT,
     SPEED,
     ANGLE,
-    LIM_SW,
   } mode;
 
   typedef struct
@@ -108,31 +108,43 @@ void Error_Handler(void);
 
   typedef struct
   {
-    mode mode;
-    float angle;
-    int16_t resolution;
-    float pre_angle;
-    float pre_raw_angle;
-    float raw_angle;
-    int16_t rpm;
-    int8_t temp;
-    float half_target_angle;
-    float target_angle;
-    int16_t target_rpm;
-    PIDState angle_pid_state;
-    PIDState speed_pid_state;
-    int16_t angle_zero;
-    Sit sub_sit;
-  } MotorState;
-
-  typedef struct
-  {
     float Kp;
     float Ki;
     float Kd;
   } Gain;
 
-/* USER CODE END Private defines */
+  typedef struct
+  {
+    float angle;
+    float target_angle;
+    PIDState angle_pid_state;
+    float pre_angle;
+    float pre_raw_angle;
+    float raw_angle;
+    float half_target_angle;
+    int16_t angle_zero;
+    Gain angle_gain;
+  } Angle;
+
+  typedef struct
+  {
+    int16_t rpm;
+    int16_t target_rpm;
+    PIDState speed_pid_state;
+    Gain speed_gain;
+  } Speed;
+
+  typedef struct
+  {
+    mode mode;
+    Angle angle;
+    Speed speed;
+    int16_t resolution;
+    int16_t current;
+    Sit sub_sit;
+  } MotorState;
+
+  /* USER CODE END Private defines */
 
 #ifdef __cplusplus
 }

@@ -34,6 +34,8 @@ int8_t view_6;
 int16_t rpms[5] = {0};
 int16_t rpms_sum;
 int16_t now_rpm;
+int8_t rm_id = 0;
+mode view = INIT;
 #define gear_ratio 19.204f
 #define alpha 0.2f
 /* USER CODE END 0 */
@@ -67,7 +69,7 @@ void MX_FDCAN1_Init(void)
   hfdcan1.Init.DataSyncJumpWidth = 1;
   hfdcan1.Init.DataTimeSeg1 = 7;
   hfdcan1.Init.DataTimeSeg2 = 1;
-  hfdcan1.Init.StdFiltersNbr = 1;
+  hfdcan1.Init.StdFiltersNbr = 3;
   hfdcan1.Init.ExtFiltersNbr = 0;
   hfdcan1.Init.TxFifoQueueMode = FDCAN_TX_FIFO_OPERATION;
   if (HAL_FDCAN_Init(&hfdcan1) != HAL_OK)
@@ -77,12 +79,39 @@ void MX_FDCAN1_Init(void)
   /* USER CODE BEGIN FDCAN1_Init 2 */
   FDCAN_FilterTypeDef sFilter;
 
+  // 全体
   sFilter.IdType = FDCAN_STANDARD_ID;
   sFilter.FilterIndex = 0;
   sFilter.FilterType = FDCAN_FILTER_MASK;
   sFilter.FilterConfig = FDCAN_FILTER_TO_RXFIFO0;
-  sFilter.FilterID1 = 0x01F;
-  sFilter.FilterID2 = 0xFE0;
+  sFilter.FilterID1 = 0x000;
+  sFilter.FilterID2 = 0x700;
+  HAL_FDCAN_ConfigFilter(&hfdcan1, &sFilter);
+
+  // Tx
+  sFilter.IdType = FDCAN_STANDARD_ID;
+  sFilter.FilterIndex = 1;
+  sFilter.FilterType = FDCAN_FILTER_MASK;
+  sFilter.FilterConfig = FDCAN_FILTER_TO_RXFIFO0;
+  sFilter.FilterID1 = 0x160;
+  sFilter.FilterID2 = 0x7E0;
+  HAL_FDCAN_ConfigFilter(&hfdcan1, &sFilter);
+
+  // Rx
+  // sFilter.IdType = FDCAN_STANDARD_ID;
+  // sFilter.FilterIndex = 2;
+  // sFilter.FilterType = FDCAN_FILTER_MASK;
+  // sFilter.FilterConfig = FDCAN_FILTER_TO_RXFIFO2;
+  // sFilter.FilterID1 = 0x200;
+  // sFilter.FilterID2 = 0x01F;
+
+  // sync
+  sFilter.IdType = FDCAN_STANDARD_ID;
+  sFilter.FilterIndex = 2;
+  sFilter.FilterType = FDCAN_FILTER_MASK;
+  sFilter.FilterConfig = FDCAN_FILTER_TO_RXFIFO1;
+  sFilter.FilterID1 = 0x300;
+  sFilter.FilterID2 = 0x700;
 
   HAL_FDCAN_ConfigFilter(&hfdcan1, &sFilter);
 
@@ -94,10 +123,14 @@ void MX_FDCAN1_Init(void)
       FDCAN_IT_RX_FIFO0_NEW_MESSAGE,
       0);
 
+  HAL_FDCAN_ActivateNotification(
+      &hfdcan1,
+      FDCAN_IT_RX_FIFO1_NEW_MESSAGE,
+      0);
+
   HAL_FDCAN_Start(&hfdcan1);
 
   /* USER CODE END FDCAN1_Init 2 */
-
 }
 /* FDCAN2 init function */
 void MX_FDCAN2_Init(void)
@@ -170,24 +203,23 @@ void MX_FDCAN2_Init(void)
   HAL_FDCAN_Start(&hfdcan2);
 
   /* USER CODE END FDCAN2_Init 2 */
-
 }
 
-static uint32_t HAL_RCC_FDCAN_CLK_ENABLED=0;
+static uint32_t HAL_RCC_FDCAN_CLK_ENABLED = 0;
 
-void HAL_FDCAN_MspInit(FDCAN_HandleTypeDef* fdcanHandle)
+void HAL_FDCAN_MspInit(FDCAN_HandleTypeDef *fdcanHandle)
 {
 
   GPIO_InitTypeDef GPIO_InitStruct = {0};
   RCC_PeriphCLKInitTypeDef PeriphClkInit = {0};
-  if(fdcanHandle->Instance==FDCAN1)
+  if (fdcanHandle->Instance == FDCAN1)
   {
-  /* USER CODE BEGIN FDCAN1_MspInit 0 */
+    /* USER CODE BEGIN FDCAN1_MspInit 0 */
 
-  /* USER CODE END FDCAN1_MspInit 0 */
+    /* USER CODE END FDCAN1_MspInit 0 */
 
-  /** Initializes the peripherals clocks
-  */
+    /** Initializes the peripherals clocks
+     */
     PeriphClkInit.PeriphClockSelection = RCC_PERIPHCLK_FDCAN;
     PeriphClkInit.FdcanClockSelection = RCC_FDCANCLKSOURCE_PCLK1;
     if (HAL_RCCEx_PeriphCLKConfig(&PeriphClkInit) != HAL_OK)
@@ -197,7 +229,8 @@ void HAL_FDCAN_MspInit(FDCAN_HandleTypeDef* fdcanHandle)
 
     /* FDCAN1 clock enable */
     HAL_RCC_FDCAN_CLK_ENABLED++;
-    if(HAL_RCC_FDCAN_CLK_ENABLED==1){
+    if (HAL_RCC_FDCAN_CLK_ENABLED == 1)
+    {
       __HAL_RCC_FDCAN_CLK_ENABLE();
     }
 
@@ -206,7 +239,7 @@ void HAL_FDCAN_MspInit(FDCAN_HandleTypeDef* fdcanHandle)
     PA11     ------> FDCAN1_RX
     PA12     ------> FDCAN1_TX
     */
-    GPIO_InitStruct.Pin = FDCAN1_Rx_Pin|FDCAN1_Tx_Pin;
+    GPIO_InitStruct.Pin = FDCAN1_Rx_Pin | FDCAN1_Tx_Pin;
     GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
     GPIO_InitStruct.Pull = GPIO_NOPULL;
     GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
@@ -216,18 +249,18 @@ void HAL_FDCAN_MspInit(FDCAN_HandleTypeDef* fdcanHandle)
     /* FDCAN1 interrupt Init */
     HAL_NVIC_SetPriority(FDCAN1_IT0_IRQn, 0, 0);
     HAL_NVIC_EnableIRQ(FDCAN1_IT0_IRQn);
-  /* USER CODE BEGIN FDCAN1_MspInit 1 */
+    /* USER CODE BEGIN FDCAN1_MspInit 1 */
 
-  /* USER CODE END FDCAN1_MspInit 1 */
+    /* USER CODE END FDCAN1_MspInit 1 */
   }
-  else if(fdcanHandle->Instance==FDCAN2)
+  else if (fdcanHandle->Instance == FDCAN2)
   {
-  /* USER CODE BEGIN FDCAN2_MspInit 0 */
+    /* USER CODE BEGIN FDCAN2_MspInit 0 */
 
-  /* USER CODE END FDCAN2_MspInit 0 */
+    /* USER CODE END FDCAN2_MspInit 0 */
 
-  /** Initializes the peripherals clocks
-  */
+    /** Initializes the peripherals clocks
+     */
     PeriphClkInit.PeriphClockSelection = RCC_PERIPHCLK_FDCAN;
     PeriphClkInit.FdcanClockSelection = RCC_FDCANCLKSOURCE_PCLK1;
     if (HAL_RCCEx_PeriphCLKConfig(&PeriphClkInit) != HAL_OK)
@@ -237,7 +270,8 @@ void HAL_FDCAN_MspInit(FDCAN_HandleTypeDef* fdcanHandle)
 
     /* FDCAN2 clock enable */
     HAL_RCC_FDCAN_CLK_ENABLED++;
-    if(HAL_RCC_FDCAN_CLK_ENABLED==1){
+    if (HAL_RCC_FDCAN_CLK_ENABLED == 1)
+    {
       __HAL_RCC_FDCAN_CLK_ENABLE();
     }
 
@@ -246,7 +280,7 @@ void HAL_FDCAN_MspInit(FDCAN_HandleTypeDef* fdcanHandle)
     PB12     ------> FDCAN2_RX
     PB13     ------> FDCAN2_TX
     */
-    GPIO_InitStruct.Pin = FDCAN2_Rx_Pin|FDCAN2_Tx_Pin;
+    GPIO_InitStruct.Pin = FDCAN2_Rx_Pin | FDCAN2_Tx_Pin;
     GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
     GPIO_InitStruct.Pull = GPIO_NOPULL;
     GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
@@ -258,23 +292,24 @@ void HAL_FDCAN_MspInit(FDCAN_HandleTypeDef* fdcanHandle)
     HAL_NVIC_EnableIRQ(FDCAN2_IT0_IRQn);
     HAL_NVIC_SetPriority(FDCAN2_IT1_IRQn, 0, 0);
     HAL_NVIC_EnableIRQ(FDCAN2_IT1_IRQn);
-  /* USER CODE BEGIN FDCAN2_MspInit 1 */
+    /* USER CODE BEGIN FDCAN2_MspInit 1 */
 
-  /* USER CODE END FDCAN2_MspInit 1 */
+    /* USER CODE END FDCAN2_MspInit 1 */
   }
 }
 
-void HAL_FDCAN_MspDeInit(FDCAN_HandleTypeDef* fdcanHandle)
+void HAL_FDCAN_MspDeInit(FDCAN_HandleTypeDef *fdcanHandle)
 {
 
-  if(fdcanHandle->Instance==FDCAN1)
+  if (fdcanHandle->Instance == FDCAN1)
   {
-  /* USER CODE BEGIN FDCAN1_MspDeInit 0 */
+    /* USER CODE BEGIN FDCAN1_MspDeInit 0 */
 
-  /* USER CODE END FDCAN1_MspDeInit 0 */
+    /* USER CODE END FDCAN1_MspDeInit 0 */
     /* Peripheral clock disable */
     HAL_RCC_FDCAN_CLK_ENABLED--;
-    if(HAL_RCC_FDCAN_CLK_ENABLED==0){
+    if (HAL_RCC_FDCAN_CLK_ENABLED == 0)
+    {
       __HAL_RCC_FDCAN_CLK_DISABLE();
     }
 
@@ -282,22 +317,23 @@ void HAL_FDCAN_MspDeInit(FDCAN_HandleTypeDef* fdcanHandle)
     PA11     ------> FDCAN1_RX
     PA12     ------> FDCAN1_TX
     */
-    HAL_GPIO_DeInit(GPIOA, FDCAN1_Rx_Pin|FDCAN1_Tx_Pin);
+    HAL_GPIO_DeInit(GPIOA, FDCAN1_Rx_Pin | FDCAN1_Tx_Pin);
 
     /* FDCAN1 interrupt Deinit */
     HAL_NVIC_DisableIRQ(FDCAN1_IT0_IRQn);
-  /* USER CODE BEGIN FDCAN1_MspDeInit 1 */
+    /* USER CODE BEGIN FDCAN1_MspDeInit 1 */
 
-  /* USER CODE END FDCAN1_MspDeInit 1 */
+    /* USER CODE END FDCAN1_MspDeInit 1 */
   }
-  else if(fdcanHandle->Instance==FDCAN2)
+  else if (fdcanHandle->Instance == FDCAN2)
   {
-  /* USER CODE BEGIN FDCAN2_MspDeInit 0 */
+    /* USER CODE BEGIN FDCAN2_MspDeInit 0 */
 
-  /* USER CODE END FDCAN2_MspDeInit 0 */
+    /* USER CODE END FDCAN2_MspDeInit 0 */
     /* Peripheral clock disable */
     HAL_RCC_FDCAN_CLK_ENABLED--;
-    if(HAL_RCC_FDCAN_CLK_ENABLED==0){
+    if (HAL_RCC_FDCAN_CLK_ENABLED == 0)
+    {
       __HAL_RCC_FDCAN_CLK_DISABLE();
     }
 
@@ -305,14 +341,14 @@ void HAL_FDCAN_MspDeInit(FDCAN_HandleTypeDef* fdcanHandle)
     PB12     ------> FDCAN2_RX
     PB13     ------> FDCAN2_TX
     */
-    HAL_GPIO_DeInit(GPIOB, FDCAN2_Rx_Pin|FDCAN2_Tx_Pin);
+    HAL_GPIO_DeInit(GPIOB, FDCAN2_Rx_Pin | FDCAN2_Tx_Pin);
 
     /* FDCAN2 interrupt Deinit */
     HAL_NVIC_DisableIRQ(FDCAN2_IT0_IRQn);
     HAL_NVIC_DisableIRQ(FDCAN2_IT1_IRQn);
-  /* USER CODE BEGIN FDCAN2_MspDeInit 1 */
+    /* USER CODE BEGIN FDCAN2_MspDeInit 1 */
 
-  /* USER CODE END FDCAN2_MspDeInit 1 */
+    /* USER CODE END FDCAN2_MspDeInit 1 */
   }
 }
 
@@ -326,52 +362,99 @@ void HAL_FDCAN_RxFifo0Callback(FDCAN_HandleTypeDef *hfdcan, uint32_t RxFifo0ITs)
   if (RxFifo0ITs & FDCAN_IT_RX_FIFO0_NEW_MESSAGE)
   {
     HAL_FDCAN_GetRxMessage(
-      hfdcan,
-      FDCAN_RX_FIFO0,
-      &RxHeader,
-      RxData);
+        hfdcan,
+        FDCAN_RX_FIFO0,
+        &RxHeader,
+        RxData);
+    uint32_t received_id = RxHeader.Identifier;
 
     if (hfdcan->Instance == FDCAN1)
     {
-      uint32_t received_id = RxHeader.Identifier;
-      int8_t mode = RxData[2];
-      if (((received_id >> 4) & 0x01) == 1) {
-        uint8_t gain_kind = (received_id & 0x0F);
-        if (mode == ANGLE)
+      if (((received_id >> 8) & 0x7) == 0x0)
+      {
+        // 緊急停止用
+      }
+      else if (((received_id >> 3) & 0x03) == rm_id)
+      {
+        uint8_t motor_id = (received_id & 0x07);
+        motorstate[motor_id].mode = RxData[0] & 0xF;
+
+        if ((RxData[0] & 0xF0) == 0x10)
         {
-          if (gain_kind == 0) {
-            angle_gain.Kp = ((RxData[4] << 8) | RxData[5]);
-          } else if (gain_kind == 1) {
-            angle_gain.Ki = ((RxData[4] << 8) | RxData[5]);
-          } else if (gain_kind == 2) {
-            angle_gain.Kd = ((RxData[4] << 8) | RxData[5]);
+          int16_t value1 = (RxData[1] << 8) | RxData[2];
+          int16_t value2 = (RxData[3] << 8) | RxData[4];
+          int16_t value3 = (RxData[5] << 8) | RxData[6];
+          if (motorstate[motor_id].mode == SPEED)
+          {
+            motorstate[motor_id].speed.speed_gain.Kp = value1;
+            motorstate[motor_id].speed.speed_gain.Ki = value2;
+            motorstate[motor_id].speed.speed_gain.Kd = value3;
+          }
+          else if (motorstate[motor_id].mode == ANGLE)
+          {
+            motorstate[motor_id].angle.angle_gain.Kp = value1;
+            motorstate[motor_id].angle.angle_gain.Ki = value2;
+            motorstate[motor_id].angle.angle_gain.Kd = value3;
           }
         }
-        else if (mode == SPEED)
+        else
         {
-          if (gain_kind == 0) {
-            speed_gain.Kp = ((RxData[4] << 8) | RxData[5]);
-          } else if (gain_kind == 1) {
-            speed_gain.Ki = ((RxData[4] << 8) | RxData[5]);
-          } else if (gain_kind == 2) {
-            speed_gain.Kd = ((RxData[4] << 8) | RxData[5]);
+          view = motorstate[motor_id].mode;
+          if (motorstate[motor_id].mode == CURRENT)
+          {
+            motorstate[motor_id].current = (int16_t)((RxData[1] << 8) | RxData[2]);
           }
-        }
-      } else {
-        if (mode == ANGLE)
-        {
-          double pre_target_angle = motorstate[received_id].target_angle;
-          motorstate[received_id].mode = mode;
-          motorstate[received_id].target_angle = (int16_t)((RxData[4] << 8) | RxData[5]);
-          motorstate[received_id].half_target_angle = pre_target_angle - motorstate[received_id].target_angle;
-        }
-        else if (mode == SPEED)
-        {
-          return_rpms = true;
-          motorstate[received_id].mode = mode;
-          motorstate[received_id].target_rpm = (int16_t)((RxData[4] << 8) | RxData[5] ) * gear_ratio;
+          else if (motorstate[motor_id].mode == SPEED)
+          {
+            motorstate[motor_id].speed.target_rpm = (int16_t)((RxData[1] << 8) | RxData[2]) * gear_ratio;
+          }
+          else if (motorstate[motor_id].mode == ANGLE)
+          {
+            double pre_target_angle = motorstate[motor_id].angle.target_angle;
+            motorstate[motor_id].angle.target_angle = (int16_t)((RxData[1] << 8) | RxData[2]);
+            motorstate[motor_id].angle.half_target_angle = pre_target_angle - motorstate[motor_id].angle.target_angle;
+          }
         }
       }
+      // uint32_t received_id = RxHeader.Identifier;
+      // int8_t mode = RxData[2];
+      // if (((received_id >> 4) & 0x01) == 1) {
+      //   uint8_t gain_kind = (received_id & 0x0F);
+      //   if (mode == ANGLE)
+      //   {
+      //     if (gain_kind == 0) {
+      //       angle_gain.Kp = ((RxData[4] << 8) | RxData[5]);
+      //     } else if (gain_kind == 1) {
+      //       angle_gain.Ki = ((RxData[4] << 8) | RxData[5]);
+      //     } else if (gain_kind == 2) {
+      //       angle_gain.Kd = ((RxData[4] << 8) | RxData[5]);
+      //     }
+      //   }
+      //   else if (mode == SPEED)
+      //   {
+      //     if (gain_kind == 0) {
+      //       speed_gain.Kp = ((RxData[4] << 8) | RxData[5]);
+      //     } else if (gain_kind == 1) {
+      //       speed_gain.Ki = ((RxData[4] << 8) | RxData[5]);
+      //     } else if (gain_kind == 2) {
+      //       speed_gain.Kd = ((RxData[4] << 8) | RxData[5]);
+      //     }
+      //   }
+      // } else {
+      //   if (mode == ANGLE)
+      //   {
+      //     double pre_target_angle = motorstate[received_id].target_angle;
+      //     motorstate[received_id].mode = mode;
+      //     motorstate[received_id].target_angle = (int16_t)((RxData[4] << 8) | RxData[5]);
+      //     motorstate[received_id].half_target_angle = pre_target_angle - motorstate[received_id].target_angle;
+      //   }
+      //   else if (mode == SPEED)
+      //   {
+      //     return_rpms = true;
+      //     motorstate[received_id].mode = mode;
+      //     motorstate[received_id].target_rpm = (int16_t)((RxData[4] << 8) | RxData[5] ) * gear_ratio;
+      //   }
+      // }
     }
     else if (hfdcan->Instance == FDCAN2)
     {
@@ -380,7 +463,7 @@ void HAL_FDCAN_RxFifo0Callback(FDCAN_HandleTypeDef *hfdcan, uint32_t RxFifo0ITs)
   }
 }
 
-void HAL_FDCAN_RxFifo1Callback(FDCAN_HandleTypeDef *hfdcan2_, uint32_t RxFifo1ITs)
+void HAL_FDCAN_RxFifo1Callback(FDCAN_HandleTypeDef *hfdcan, uint32_t RxFifo1ITs)
 {
   FDCAN_RxHeaderTypeDef RxHeader;
   uint8_t RxData[64];
@@ -388,63 +471,70 @@ void HAL_FDCAN_RxFifo1Callback(FDCAN_HandleTypeDef *hfdcan2_, uint32_t RxFifo1IT
   if (RxFifo1ITs & FDCAN_IT_RX_FIFO1_NEW_MESSAGE)
   {
     HAL_FDCAN_GetRxMessage(
-        hfdcan2_,
+        hfdcan,
         FDCAN_RX_FIFO1,
         &RxHeader,
         RxData);
-    uint32_t received_id = RxHeader.Identifier & 0x00F;
-    uint16_t angle_raw = (RxData[0] << 8) | RxData[1];
-    now_rpm = (RxData[2] << 8) | RxData[3];
-    //for(int i = 4; i > 0; i--) {
-    //  if (motorstate[received_id - 1].sub_sit == Stop)
-    //  {
-    //    rpms[i] = (RxData[2] << 8) | RxData[3];
-    //  } else {
-    //    rpms[i] = rpms[i - 1];
-    //  }
-    //}
-    //rpms[0] = (RxData[2] << 8) | RxData[3];
-    //rpms_sum = 0;
-    //for (int i = 0; i < 5; i++) {
-    //  rpms_sum += rpms[i];
-    //}
-    //motorstate[received_id - 1].rpm = (float)rpms_sum / 5.0f;
-    motorstate[received_id - 1].rpm = now_rpm * alpha + motorstate[received_id - 1].rpm * (1 - alpha);
-    motorstate[received_id - 1].raw_angle = (float)angle_raw * 360.0f / 8192.0f;
-    motorstate[received_id - 1].temp = (RxData[4] << 8) | RxData[5];
-    float diff = motorstate[received_id - 1].raw_angle - motorstate[received_id - 1].pre_raw_angle;
-    if (diff < -300)
+    if (hfdcan->Instance == FDCAN1)
     {
-      motorstate[received_id - 1].resolution += 1;
+      // 全体命令
     }
-    else if (diff > 300)
+    else
     {
-      motorstate[received_id - 1].resolution -= 1;
-    }
-    //    else {
-    //      if (motorstate[received_id - 1].rpm > 0) {
-    //        if (motorstate[received_id - 1].pre_raw_angle > 250 && motorstate[received_id - 1].raw_angle < 110) {
-    //          motorstate[received_id - 1].r += 1;
-    //        }
-    //      } else if (motorstate[received_id - 1].rpm < 0) {
-    //        if (motorstate[received_id - 1].pre_raw_angle < 110 && motorstate[received_id - 1].raw_angle > 250) {
-    //          motorstate[received_id - 1].r -= 1;
-    //        }
-    //      }
-    //    }
-    motorstate[received_id - 1].angle = motorstate[received_id - 1].raw_angle + motorstate[received_id - 1].resolution * 360;
-    motorstate[received_id - 1].pre_raw_angle = motorstate[received_id - 1].raw_angle;
-    if (motorstate[received_id - 1].sub_sit == Stop)
-    {
-      motorstate[received_id - 1].sub_sit = Move;
-      motorstate[received_id - 1].angle_zero = motorstate[received_id - 1].angle;
-    }
-    motorstate[received_id - 1].angle = fmod(motorstate[received_id - 1].angle - motorstate[received_id - 1].angle_zero, 360 * gear_ratio);
-    if (motorstate[received_id - 1].angle < 0)
-    {
-      motorstate[received_id - 1].angle += 360 * gear_ratio;
+      uint32_t received_id = RxHeader.Identifier & 0x00F;
+      uint16_t angle_raw = (RxData[0] << 8) | RxData[1];
+      now_rpm = (RxData[2] << 8) | RxData[3];
+      // for(int i = 4; i > 0; i--) {
+      //   if (motorstate[received_id - 1].sub_sit == Stop)
+      //   {
+      //     rpms[i] = (RxData[2] << 8) | RxData[3];
+      //   } else {
+      //     rpms[i] = rpms[i - 1];
+      //   }
+      // }
+      // rpms[0] = (RxData[2] << 8) | RxData[3];
+      // rpms_sum = 0;
+      // for (int i = 0; i < 5; i++) {
+      //   rpms_sum += rpms[i];
+      // }
+      // motorstate[received_id - 1].rpm = (float)rpms_sum / 5.0f;
+      motorstate[received_id - 1].speed.rpm = now_rpm * alpha + motorstate[received_id - 1].speed.rpm * (1 - alpha);
+      motorstate[received_id - 1].angle.raw_angle = (float)angle_raw * 360.0f / 8192.0f;
+      motorstate[received_id - 1].current = (RxData[4] << 8) | RxData[5];
+      float diff = motorstate[received_id - 1].angle.raw_angle - motorstate[received_id - 1].angle.pre_raw_angle;
+      if (diff < -300)
+      {
+        motorstate[received_id - 1].resolution += 1;
+      }
+      else if (diff > 300)
+      {
+        motorstate[received_id - 1].resolution -= 1;
+      }
+      //    else {
+      //      if (motorstate[received_id - 1].rpm > 0) {
+      //        if (motorstate[received_id - 1].pre_raw_angle > 250 && motorstate[received_id - 1].raw_angle < 110) {
+      //          motorstate[received_id - 1].r += 1;
+      //        }
+      //      } else if (motorstate[received_id - 1].rpm < 0) {
+      //        if (motorstate[received_id - 1].pre_raw_angle < 110 && motorstate[received_id - 1].raw_angle > 250) {
+      //          motorstate[received_id - 1].r -= 1;
+      //        }
+      //      }
+      //    }
+      motorstate[received_id - 1].angle.angle = motorstate[received_id - 1].angle.raw_angle + motorstate[received_id - 1].resolution * 360;
+      motorstate[received_id - 1].angle.pre_raw_angle = motorstate[received_id - 1].angle.raw_angle;
+      if (motorstate[received_id - 1].sub_sit == Stop)
+      {
+        motorstate[received_id - 1].sub_sit = Move;
+        motorstate[received_id - 1].angle.angle_zero = motorstate[received_id - 1].angle.angle;
+      }
+      motorstate[received_id - 1].angle.angle = fmod(motorstate[received_id - 1].angle.angle - motorstate[received_id - 1].angle.angle_zero, 360 * gear_ratio);
+      if (motorstate[received_id - 1].angle.angle < 0)
+      {
+        motorstate[received_id - 1].angle.angle += 360 * gear_ratio;
+      }
     }
   }
 }
-/* USER CODE END 1 */
 
+/* USER CODE END 1 */

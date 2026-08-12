@@ -49,6 +49,7 @@ float view3 = 0;
 float view4 = 0;
 volatile bool tim6 = 0;
 volatile bool tim16 = 0;
+int8_t motor_number = 8;
 Sit motor_sit[8] = {0};
 bool return_rpms = false;
 HAL_StatusTypeDef status;
@@ -75,6 +76,7 @@ void SystemClock_Config(void);
 /* USER CODE BEGIN PFP */
 void speed_pid_task(void);
 void angle_pid_task(void);
+void gain_init();
 float speed_pid(int8_t motor_id, float e, float *e_pre, float *ie);
 float angle_pid(int8_t motor_id, float e, float *e_pre, float *ie);
 float pid(int8_t motor_id, float e, float *e_pre, float *ie, float p_gain, float i_gain, float d_gain, float t);
@@ -85,9 +87,9 @@ float pid(int8_t motor_id, float e, float *e_pre, float *ie, float p_gain, float
 /* USER CODE END 0 */
 
 /**
-  * @brief  The application entry point.
-  * @retval int
-  */
+ * @brief  The application entry point.
+ * @retval int
+ */
 int main(void)
 {
 
@@ -100,15 +102,15 @@ int main(void)
   HAL_Init();
 
   /* USER CODE BEGIN Init */
-  motorstate[0].target_rpm = 1140;
+  motorstate[0].speed.target_rpm = 1140;
   motorstate[0].mode = SPEED;
+  gain_init();
   /* USER CODE END Init */
 
   /* Configure the system clock */
   SystemClock_Config();
 
   /* USER CODE BEGIN SysInit */
-
   /* USER CODE END SysInit */
 
   /* Initialize all configured peripherals */
@@ -119,8 +121,8 @@ int main(void)
   MX_TIM6_Init();
   MX_TIM16_Init();
   /* USER CODE BEGIN 2 */
-  HAL_TIM_Base_Start_IT(&htim6);
   HAL_TIM_Base_Start_IT(&htim16);
+  HAL_TIM_Base_Start_IT(&htim6);
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -137,29 +139,29 @@ int main(void)
     }
   }
 
-    /* USER CODE END WHILE */
+  /* USER CODE END WHILE */
 
-    /* USER CODE BEGIN 3 */
+  /* USER CODE BEGIN 3 */
 
   /* USER CODE END 3 */
 }
 
 /**
-  * @brief System Clock Configuration
-  * @retval None
-  */
+ * @brief System Clock Configuration
+ * @retval None
+ */
 void SystemClock_Config(void)
 {
   RCC_OscInitTypeDef RCC_OscInitStruct = {0};
   RCC_ClkInitTypeDef RCC_ClkInitStruct = {0};
 
   /** Configure the main internal regulator output voltage
-  */
+   */
   HAL_PWREx_ControlVoltageScaling(PWR_REGULATOR_VOLTAGE_SCALE1);
 
   /** Initializes the RCC Oscillators according to the specified parameters
-  * in the RCC_OscInitTypeDef structure.
-  */
+   * in the RCC_OscInitTypeDef structure.
+   */
   RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSI;
   RCC_OscInitStruct.HSIState = RCC_HSI_ON;
   RCC_OscInitStruct.HSICalibrationValue = RCC_HSICALIBRATION_DEFAULT;
@@ -176,9 +178,8 @@ void SystemClock_Config(void)
   }
 
   /** Initializes the CPU, AHB and APB buses clocks
-  */
-  RCC_ClkInitStruct.ClockType = RCC_CLOCKTYPE_HCLK|RCC_CLOCKTYPE_SYSCLK
-                              |RCC_CLOCKTYPE_PCLK1|RCC_CLOCKTYPE_PCLK2;
+   */
+  RCC_ClkInitStruct.ClockType = RCC_CLOCKTYPE_HCLK | RCC_CLOCKTYPE_SYSCLK | RCC_CLOCKTYPE_PCLK1 | RCC_CLOCKTYPE_PCLK2;
   RCC_ClkInitStruct.SYSCLKSource = RCC_SYSCLKSOURCE_PLLCLK;
   RCC_ClkInitStruct.AHBCLKDivider = RCC_SYSCLK_DIV1;
   RCC_ClkInitStruct.APB1CLKDivider = RCC_HCLK_DIV1;
@@ -191,6 +192,15 @@ void SystemClock_Config(void)
 }
 
 /* USER CODE BEGIN 4 */
+void gain_init()
+{
+  for (int i = 0; i < 8; i++)
+  {
+    motorstate[i].speed.speed_gain = speed_gain;
+    motorstate[i].angle.angle_gain = angle_gain;
+  }
+}
+
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 {
   if (htim->Instance == TIM6)
@@ -203,37 +213,73 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
   }
 }
 
-void returnrpms(void) {
+void returnstates(void)
+{
   FDCAN_TxHeaderTypeDef TxHeader;
   uint8_t tx_datas[64] = {0};
 
-  TxHeader.Identifier = 0x60;             // 送信ID
-  TxHeader.IdType = FDCAN_STANDARD_ID;     // 標準ID
-  TxHeader.TxFrameType = FDCAN_DATA_FRAME; // データフレーム
-  TxHeader.DataLength = FDCAN_DLC_BYTES_8; // DLC
-  TxHeader.ErrorStateIndicator = FDCAN_ESI_ACTIVE;
-  TxHeader.BitRateSwitch = FDCAN_BRS_OFF; // BRS設定
-  TxHeader.FDFormat = FDCAN_CLASSIC_CAN;  // Classic / FD
-  TxHeader.TxEventFifoControl = FDCAN_NO_TX_EVENTS;
-  TxHeader.MessageMarker = 0;
-
-  tx_datas[0] = (motorstate[0].rpm >> 8);
-  tx_datas[1] = (motorstate[0].rpm & 0xFF);
-  tx_datas[2] = (motorstate[1].rpm >> 8);
-  tx_datas[3] = (motorstate[1].rpm & 0xFF);
-  tx_datas[4] = (motorstate[2].rpm >> 8);
-  tx_datas[5] = (motorstate[2].rpm & 0xFF);
-  tx_datas[6] = (motorstate[3].rpm >> 8);
-  tx_datas[7] = (motorstate[3].rpm & 0xFF);
-  if (HAL_FDCAN_GetTxFifoFreeLevel(&hfdcan1) > 0)
+  for (int i = 0; i < motor_number; i++)
   {
-    HAL_FDCAN_AddMessageToTxFifoQ(&hfdcan1, &TxHeader, tx_datas);
+    TxHeader.Identifier = 0x260 | i;         // 送信ID
+    TxHeader.IdType = FDCAN_STANDARD_ID;     // 標準ID
+    TxHeader.TxFrameType = FDCAN_DATA_FRAME; // データフレーム
+    TxHeader.DataLength = FDCAN_DLC_BYTES_6; // DLC
+    TxHeader.ErrorStateIndicator = FDCAN_ESI_ACTIVE;
+    TxHeader.BitRateSwitch = FDCAN_BRS_OFF; // BRS設定
+    TxHeader.FDFormat = FDCAN_CLASSIC_CAN;  // Classic / FD
+    TxHeader.TxEventFifoControl = FDCAN_NO_TX_EVENTS;
+    TxHeader.MessageMarker = 0;
+
+    tx_datas[0] = (motorstate[i].current >> 8);
+    tx_datas[1] = (motorstate[i].current & 0xFF);
+    tx_datas[2] = (motorstate[i].speed.rpm >> 8);
+    tx_datas[3] = (motorstate[i].speed.rpm & 0xFF);
+    tx_datas[4] = ((int16_t)motorstate[i].angle.angle >> 8);
+    tx_datas[5] = ((int16_t)motorstate[i].angle.angle & 0xFF);
+    if (HAL_FDCAN_GetTxFifoFreeLevel(&hfdcan1) > 0)
+    {
+      HAL_FDCAN_AddMessageToTxFifoQ(&hfdcan1, &TxHeader, tx_datas);
+    }
   }
 }
 
 void speed_pid_task(void)
 {
   HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_5); // デバッグ
+
+  int16_t current[8] = {0};
+
+  for (int i = 0; i < 8; i++)
+  {
+    if (motorstate[i].speed.rpm == 0)
+    {
+      motor_sit[i] = Stop;
+    }
+    else
+    {
+      motor_sit[i] = Move;
+    }
+    if (motorstate[i].mode == ANGLE)
+    {
+      current[i] = (int16_t)speed_pid(i, (float)(motorstate[i].speed.target_rpm - motorstate[i].speed.rpm), &motorstate[i].speed.speed_pid_state.e_pre, &motorstate[i].speed.speed_pid_state.ie);
+    }
+    else if (motorstate[i].mode == SPEED)
+    {
+      // if (return_count >= 100) {
+      if (return_rpms == true)
+      {
+        //        returnrpms();
+        return_rpms = false;
+        //  return_count = 0;
+      }
+      // return_count += 1;
+      current[i] = (int16_t)speed_pid(i, (float)(motorstate[i].speed.target_rpm - motorstate[i].speed.rpm), &motorstate[i].speed.speed_pid_state.e_pre, &motorstate[i].speed.speed_pid_state.ie);
+    }
+    else if (motorstate[i].mode == CURRENT)
+    {
+      current[i] = motorstate[i].current;
+    }
+  }
   FDCAN_TxHeaderTypeDef TxHeader;
   uint8_t tx_datas[64] = {0};
 
@@ -246,39 +292,7 @@ void speed_pid_task(void)
   TxHeader.FDFormat = FDCAN_CLASSIC_CAN;  // Classic / FD
   TxHeader.TxEventFifoControl = FDCAN_NO_TX_EVENTS;
   TxHeader.MessageMarker = 0;
-
-  int16_t current[8] = {0};
-
-  for (int i = 0; i < 8; i++)
-  {
-    if (motorstate[i].rpm == 0)
-    {
-      motor_sit[i] = Stop;
-    }
-    else
-    {
-      motor_sit[i] = Move;
-    }
-    if (motorstate[i].mode == ANGLE)
-    {
-      current[i] = (int16_t)speed_pid(i, (float)(motorstate[i].target_rpm - motorstate[i].rpm), &motorstate[i].speed_pid_state.e_pre, &motorstate[i].speed_pid_state.ie);
-    }
-    else if (motorstate[i].mode == SPEED)
-    {
-      //if (return_count >= 100) {
-      if (return_rpms == true) {
-//        returnrpms();
-        return_rpms = false;
-      //  return_count = 0;
-      }
-      //return_count += 1;
-      current[i] = (int16_t)speed_pid(i, (float)(motorstate[i].target_rpm - motorstate[i].rpm), &motorstate[i].speed_pid_state.e_pre, &motorstate[i].speed_pid_state.ie);
-    }
-  }
   view1 = current[0];
-  view2 = current[1];
-  view3 = current[2];
-  view4 = current[3];
   tx_datas[0] = (current[0] >> 8);
   tx_datas[1] = (current[0] & 0xFF);
   tx_datas[2] = (current[1] >> 8);
@@ -291,6 +305,29 @@ void speed_pid_task(void)
   {
     HAL_FDCAN_AddMessageToTxFifoQ(&hfdcan2, &TxHeader, tx_datas);
   }
+
+  TxHeader.Identifier = 0x1FF;             // 送信ID
+  TxHeader.IdType = FDCAN_STANDARD_ID;     // 標準ID
+  TxHeader.TxFrameType = FDCAN_DATA_FRAME; // データフレーム
+  TxHeader.DataLength = FDCAN_DLC_BYTES_8; // DLC
+  TxHeader.ErrorStateIndicator = FDCAN_ESI_ACTIVE;
+  TxHeader.BitRateSwitch = FDCAN_BRS_OFF; // BRS設定
+  TxHeader.FDFormat = FDCAN_CLASSIC_CAN;  // Classic / FD
+  TxHeader.TxEventFifoControl = FDCAN_NO_TX_EVENTS;
+  TxHeader.MessageMarker = 0;
+  view2 = current[5];
+  tx_datas[0] = (current[4] >> 8);
+  tx_datas[1] = (current[4] & 0xFF);
+  tx_datas[2] = (current[5] >> 8);
+  tx_datas[3] = (current[5] & 0xFF);
+  tx_datas[4] = (current[6] >> 8);
+  tx_datas[5] = (current[6] & 0xFF);
+  tx_datas[6] = (current[7] >> 8);
+  tx_datas[7] = (current[7] & 0xFF);
+  if (HAL_FDCAN_GetTxFifoFreeLevel(&hfdcan2) > 0)
+  {
+    HAL_FDCAN_AddMessageToTxFifoQ(&hfdcan2, &TxHeader, tx_datas);
+  }
 }
 
 void angle_pid_task(void)
@@ -299,7 +336,7 @@ void angle_pid_task(void)
   {
     if (motorstate[i].mode == ANGLE)
     {
-      motorstate[i].target_rpm = (int16_t)angle_pid(i, (float)(motorstate[i].target_angle * GEAR_RATIO - motorstate[i].angle), &motorstate[i].angle_pid_state.e_pre, &motorstate[i].angle_pid_state.ie);
+      motorstate[i].speed.target_rpm = (int16_t)angle_pid(i, (float)(motorstate[i].angle.target_angle * GEAR_RATIO - motorstate[i].angle.angle), &motorstate[i].angle.angle_pid_state.e_pre, &motorstate[i].angle.angle_pid_state.ie);
     }
   }
 }
@@ -314,7 +351,7 @@ float speed_pid(int8_t motor_id, float e, float *e_pre, float *ie)
   {
     *ie = MAX_SPEED_IE * -1;
   }
-  int16_t power = pid(motor_id, e, e_pre, ie, speed_gain.Kp, speed_gain.Ki, speed_gain.Kd, T_6);
+  int16_t power = pid(motor_id, e, e_pre, ie, motorstate[motor_id].speed.speed_gain.Kp, motorstate[motor_id].speed.speed_gain.Ki, motorstate[motor_id].speed.speed_gain.Kd, T_6);
   if (power > MAX_POWER)
   {
     power = MAX_POWER;
@@ -349,7 +386,7 @@ float angle_pid(int8_t motor_id, float e, float *e_pre, float *ie)
   {
     *ie = MAX_ANGLE_IE * -1;
   }
-  int16_t rpm = pid(motor_id, e, e_pre, ie, angle_gain.Kp, angle_gain.Ki, angle_gain.Kd, T_16);
+  int16_t rpm = pid(motor_id, e, e_pre, ie, motorstate[motor_id].angle.angle_gain.Kp, motorstate[motor_id].angle.angle_gain.Ki, motorstate[motor_id].angle.angle_gain.Kd, T_16);
   if (rpm > MAX_RPM)
   {
     rpm = MAX_RPM;
@@ -379,9 +416,9 @@ float pid(int8_t motor_id, float e, float *e_pre, float *ie, float p_gain, float
 /* USER CODE END 4 */
 
 /**
-  * @brief  This function is executed in case of error occurrence.
-  * @retval None
-  */
+ * @brief  This function is executed in case of error occurrence.
+ * @retval None
+ */
 void Error_Handler(void)
 {
   /* USER CODE BEGIN Error_Handler_Debug */
@@ -394,12 +431,12 @@ void Error_Handler(void)
 }
 #ifdef USE_FULL_ASSERT
 /**
-  * @brief  Reports the name of the source file and the source line number
-  *         where the assert_param error has occurred.
-  * @param  file: pointer to the source file name
-  * @param  line: assert_param error line source number
-  * @retval None
-  */
+ * @brief  Reports the name of the source file and the source line number
+ *         where the assert_param error has occurred.
+ * @param  file: pointer to the source file name
+ * @param  line: assert_param error line source number
+ * @retval None
+ */
 void assert_failed(uint8_t *file, uint32_t line)
 {
   /* USER CODE BEGIN 6 */
