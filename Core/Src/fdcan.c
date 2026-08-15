@@ -381,9 +381,9 @@ void HAL_FDCAN_RxFifo0Callback(FDCAN_HandleTypeDef *hfdcan, uint32_t RxFifo0ITs)
 
         if ((RxData[0] & 0xF0) == 0x10)
         {
-          int16_t value1 = (RxData[1] << 8) | RxData[2];
-          int16_t value2 = (RxData[3] << 8) | RxData[4];
-          int16_t value3 = (RxData[5] << 8) | RxData[6];
+          float value1 = (RxData[1] << 8) | RxData[2];
+          float value2 = (RxData[3] << 8) | RxData[4];
+          float value3 = (RxData[5] << 8) | RxData[6];
           if (motorstate[motor_id].mode == SPEED)
           {
             motorstate[motor_id].speed.speed_gain.Kp = value1;
@@ -411,7 +411,7 @@ void HAL_FDCAN_RxFifo0Callback(FDCAN_HandleTypeDef *hfdcan, uint32_t RxFifo0ITs)
           else if (motorstate[motor_id].mode == ANGLE)
           {
             double pre_target_angle = motorstate[motor_id].angle.target_angle;
-            motorstate[motor_id].angle.target_angle = (int16_t)((RxData[1] << 8) | RxData[2]);
+            motorstate[motor_id].angle.target_angle = (float)((RxData[1] << 8) | RxData[2]);
             motorstate[motor_id].angle.half_target_angle = pre_target_angle - motorstate[motor_id].angle.target_angle;
           }
         }

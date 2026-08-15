@@ -198,6 +198,7 @@ void gain_init()
   {
     motorstate[i].speed.speed_gain = speed_gain;
     motorstate[i].angle.angle_gain = angle_gain;
+    motorstate[i].motor_type = 0;
   }
 }
 
@@ -251,33 +252,40 @@ void speed_pid_task(void)
 
   for (int i = 0; i < 8; i++)
   {
-    if (motorstate[i].speed.rpm == 0)
+    if (motorstate[i].motor_type == 0)
     {
-      motor_sit[i] = Stop;
-    }
-    else
-    {
-      motor_sit[i] = Move;
-    }
-    if (motorstate[i].mode == ANGLE)
-    {
-      current[i] = (int16_t)speed_pid(i, (float)(motorstate[i].speed.target_rpm - motorstate[i].speed.rpm), &motorstate[i].speed.speed_pid_state.e_pre, &motorstate[i].speed.speed_pid_state.ie);
-    }
-    else if (motorstate[i].mode == SPEED)
-    {
-      // if (return_count >= 100) {
-      if (return_rpms == true)
+      if (motorstate[i].speed.rpm == 0)
       {
-        //        returnrpms();
-        return_rpms = false;
-        //  return_count = 0;
+        motor_sit[i] = Stop;
       }
-      // return_count += 1;
-      current[i] = (int16_t)speed_pid(i, (float)(motorstate[i].speed.target_rpm - motorstate[i].speed.rpm), &motorstate[i].speed.speed_pid_state.e_pre, &motorstate[i].speed.speed_pid_state.ie);
+      else
+      {
+        motor_sit[i] = Move;
+      }
+      if (motorstate[i].mode == ANGLE)
+      {
+        current[i] = (int16_t)speed_pid(i, (float)(motorstate[i].speed.target_rpm - motorstate[i].speed.rpm), &motorstate[i].speed.speed_pid_state.e_pre, &motorstate[i].speed.speed_pid_state.ie);
+      }
+      else if (motorstate[i].mode == SPEED)
+      {
+        // if (return_count >= 100) {
+        if (return_rpms == true)
+        {
+          //        returnrpms();
+          return_rpms = false;
+          //  return_count = 0;
+        }
+        // return_count += 1;
+        current[i] = (int16_t)speed_pid(i, (float)(motorstate[i].speed.target_rpm - motorstate[i].speed.rpm), &motorstate[i].speed.speed_pid_state.e_pre, &motorstate[i].speed.speed_pid_state.ie);
+      }
+      else if (motorstate[i].mode == CURRENT)
+      {
+        current[i] = motorstate[i].current;
+      }
     }
-    else if (motorstate[i].mode == CURRENT)
+    else if (motorstate[i].motor_type == 1)
     {
-      current[i] = motorstate[i].current;
+      // ロボストライドの処理
     }
   }
   FDCAN_TxHeaderTypeDef TxHeader;

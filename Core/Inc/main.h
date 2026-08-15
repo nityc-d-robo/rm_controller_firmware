@@ -136,6 +136,7 @@ extern "C"
 
   typedef struct
   {
+    int16_t motor_type;
     mode mode;
     Angle angle;
     Speed speed;
