@@ -102,8 +102,8 @@ int main(void)
   HAL_Init();
 
   /* USER CODE BEGIN Init */
-  motorstate[0].speed.target_rpm = 1140;
-  motorstate[0].mode = SPEED;
+  motorstate[0].speed.target_rpm = 0;
+  motorstate[0].mode = INIT;
   gain_init();
   /* USER CODE END Init */
 
@@ -129,9 +129,9 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   while (1)
   {
-    HAL_FDCAN_GetErrorCounters(&hfdcan2, &ErrorCounters);
-    live_tec = ErrorCounters.TxErrorCnt;
-    live_rec = ErrorCounters.RxErrorCnt;
+    // HAL_FDCAN_GetErrorCounters(&hfdcan2, &ErrorCounters);
+    //  live_tec = ErrorCounters.TxErrorCnt;
+    //  live_rec = ErrorCounters.RxErrorCnt;
     if ((hfdcan2.Instance->PSR & FDCAN_PSR_BO) != 0)
     {
       HAL_FDCAN_Stop(&hfdcan2);
@@ -200,6 +200,22 @@ void gain_init()
     motorstate[i].angle.angle_gain = angle_gain;
     motorstate[i].motor_type = 0;
   }
+  //  FDCAN_TxHeaderTypeDef TxHeader;
+  //  uint8_t tx_datas[64] = {0};
+
+  //  TxHeader.Identifier = 0x3 | 0x0;         // 送信ID
+  //  TxHeader.IdType = FDCAN_EXTENDED_ID;     // 標準ID
+  //  TxHeader.TxFrameType = FDCAN_DATA_FRAME; // データフレーム
+  //  TxHeader.DataLength = FDCAN_DLC_BYTES_8; // DLC
+  //  TxHeader.ErrorStateIndicator = FDCAN_ESI_ACTIVE;
+  //  TxHeader.BitRateSwitch = FDCAN_BRS_OFF; // BRS設定
+  //  TxHeader.FDFormat = FDCAN_CLASSIC_CAN;  // Classic / FD
+  //  TxHeader.TxEventFifoControl = FDCAN_NO_TX_EVENTS;
+  //  TxHeader.MessageMarker = 0;
+  //  if (HAL_FDCAN_GetTxFifoFreeLevel(&hfdcan2) > 0)
+  //  {
+  //    HAL_FDCAN_AddMessageToTxFifoQ(&hfdcan2, &TxHeader, tx_datas);
+  //  }
 }
 
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
@@ -216,6 +232,7 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 
 void returnstates(void)
 {
+  /*
   FDCAN_TxHeaderTypeDef TxHeader;
   uint8_t tx_datas[64] = {0};
 
@@ -242,6 +259,7 @@ void returnstates(void)
       HAL_FDCAN_AddMessageToTxFifoQ(&hfdcan1, &TxHeader, tx_datas);
     }
   }
+  */
 }
 
 void speed_pid_task(void)
@@ -249,10 +267,12 @@ void speed_pid_task(void)
   HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_5); // デバッグ
 
   int16_t current[8] = {0};
+  int8_t rm_counter_1 = 0;
+  int8_t rm_counter_2 = 0;
 
   for (int i = 0; i < 8; i++)
   {
-    if (motorstate[i].motor_type == 0)
+    if (motorstate[i].motor_type == 1)
     {
       if (motorstate[i].speed.rpm == 0)
       {
@@ -262,11 +282,19 @@ void speed_pid_task(void)
       {
         motor_sit[i] = Move;
       }
-      if (motorstate[i].mode == ANGLE)
+      if (motorstate[i].mode == ANGLE && motorstate[i].sub_sit == Move)
       {
         current[i] = (int16_t)speed_pid(i, (float)(motorstate[i].speed.target_rpm - motorstate[i].speed.rpm), &motorstate[i].speed.speed_pid_state.e_pre, &motorstate[i].speed.speed_pid_state.ie);
+        if (i > 3)
+        {
+          rm_counter_2 += 1;
+        }
+        else
+        {
+          rm_counter_1 += 1;
+        }
       }
-      else if (motorstate[i].mode == SPEED)
+      else if (motorstate[i].mode == SPEED && motorstate[i].sub_sit == Move)
       {
         // if (return_count >= 100) {
         if (return_rpms == true)
@@ -277,64 +305,119 @@ void speed_pid_task(void)
         }
         // return_count += 1;
         current[i] = (int16_t)speed_pid(i, (float)(motorstate[i].speed.target_rpm - motorstate[i].speed.rpm), &motorstate[i].speed.speed_pid_state.e_pre, &motorstate[i].speed.speed_pid_state.ie);
+        if (i > 4)
+        {
+          rm_counter_2 += 1;
+        }
+        else
+        {
+          rm_counter_1 += 1;
+        }
       }
-      else if (motorstate[i].mode == CURRENT)
+      else if (motorstate[i].mode == CURRENT && motorstate[i].sub_sit == Move)
       {
         current[i] = motorstate[i].current;
+        if (i > 4)
+        {
+          rm_counter_2 += 1;
+        }
+        else
+        {
+          rm_counter_1 += 1;
+        }
       }
     }
-    else if (motorstate[i].motor_type == 1)
+    else if (motorstate[i].motor_type == 2)
     {
-      // ロボストライドの処理
+      /* ロボストライドの処理
+      FDCAN_TxHeaderTypeDef TxHeader;
+      uint8_t tx_datas[64] = {0};
+
+      uint16_t torque = 65535;
+      TxHeader.Identifier = (0x1 << 24) | (torque << 8) | (0x01); // 送信ID
+      TxHeader.IdType = FDCAN_EXTENDED_ID;                        // 標準ID
+      TxHeader.TxFrameType = FDCAN_DATA_FRAME;                    // データフレーム
+      TxHeader.DataLength = FDCAN_DLC_BYTES_8;                    // DLC
+      TxHeader.ErrorStateIndicator = FDCAN_ESI_ACTIVE;
+      TxHeader.BitRateSwitch = FDCAN_BRS_OFF; // BRS設定
+      TxHeader.FDFormat = FDCAN_CLASSIC_CAN;  // Classic / FD
+      TxHeader.TxEventFifoControl = FDCAN_NO_TX_EVENTS;
+      TxHeader.MessageMarker = 0;
+      uint16_t target_angle = 65535;
+      uint16_t target_angular_velocity = 65535;
+      uint16_t Kp = 65535;
+      uint16_t Kd = 65535;
+
+      tx_datas[0] = (target_angle >> 8);
+      tx_datas[1] = (target_angle & 0xFF);
+      tx_datas[2] = (target_angular_velocity >> 8);
+      tx_datas[3] = (target_angular_velocity & 0xFF);
+      tx_datas[4] = (Kp >> 8);
+      tx_datas[5] = (Kp & 0xFF);
+      tx_datas[6] = (Kd >> 8);
+      tx_datas[7] = (Kd & 0xFF);
+      if (HAL_FDCAN_GetTxFifoFreeLevel(&hfdcan2) > 0)
+      {
+        HAL_FDCAN_AddMessageToTxFifoQ(&hfdcan2, &TxHeader, tx_datas);
+      }
+      current[i] = 0;
+      */
     }
   }
-  FDCAN_TxHeaderTypeDef TxHeader;
-  uint8_t tx_datas[64] = {0};
-
-  TxHeader.Identifier = 0x200;             // 送信ID
-  TxHeader.IdType = FDCAN_STANDARD_ID;     // 標準ID
-  TxHeader.TxFrameType = FDCAN_DATA_FRAME; // データフレーム
-  TxHeader.DataLength = FDCAN_DLC_BYTES_8; // DLC
-  TxHeader.ErrorStateIndicator = FDCAN_ESI_ACTIVE;
-  TxHeader.BitRateSwitch = FDCAN_BRS_OFF; // BRS設定
-  TxHeader.FDFormat = FDCAN_CLASSIC_CAN;  // Classic / FD
-  TxHeader.TxEventFifoControl = FDCAN_NO_TX_EVENTS;
-  TxHeader.MessageMarker = 0;
-  view1 = current[0];
-  tx_datas[0] = (current[0] >> 8);
-  tx_datas[1] = (current[0] & 0xFF);
-  tx_datas[2] = (current[1] >> 8);
-  tx_datas[3] = (current[1] & 0xFF);
-  tx_datas[4] = (current[2] >> 8);
-  tx_datas[5] = (current[2] & 0xFF);
-  tx_datas[6] = (current[3] >> 8);
-  tx_datas[7] = (current[3] & 0xFF);
-  if (HAL_FDCAN_GetTxFifoFreeLevel(&hfdcan2) > 0)
+  if (rm_counter_1 > 0)
   {
-    HAL_FDCAN_AddMessageToTxFifoQ(&hfdcan2, &TxHeader, tx_datas);
+    FDCAN_TxHeaderTypeDef TxHeader;
+    uint8_t tx_datas[64] = {0};
+
+    TxHeader.Identifier = 0x200;             // 送信ID
+    TxHeader.IdType = FDCAN_STANDARD_ID;     // 標準ID
+    TxHeader.TxFrameType = FDCAN_DATA_FRAME; // データフレーム
+    TxHeader.DataLength = FDCAN_DLC_BYTES_8; // DLC
+    TxHeader.ErrorStateIndicator = FDCAN_ESI_ACTIVE;
+    TxHeader.BitRateSwitch = FDCAN_BRS_OFF; // BRS設定
+    TxHeader.FDFormat = FDCAN_CLASSIC_CAN;  // Classic / FD
+    TxHeader.TxEventFifoControl = FDCAN_NO_TX_EVENTS;
+    TxHeader.MessageMarker = 0;
+    view1 = current[0];
+    tx_datas[0] = (current[0] >> 8);
+    tx_datas[1] = (current[0] & 0xFF);
+    tx_datas[2] = (current[1] >> 8);
+    tx_datas[3] = (current[1] & 0xFF);
+    tx_datas[4] = (current[2] >> 8);
+    tx_datas[5] = (current[2] & 0xFF);
+    tx_datas[6] = (current[3] >> 8);
+    tx_datas[7] = (current[3] & 0xFF);
+    if (HAL_FDCAN_GetTxFifoFreeLevel(&hfdcan2) > 0)
+    {
+      HAL_FDCAN_AddMessageToTxFifoQ(&hfdcan2, &TxHeader, tx_datas);
+    }
   }
-
-  TxHeader.Identifier = 0x1FF;             // 送信ID
-  TxHeader.IdType = FDCAN_STANDARD_ID;     // 標準ID
-  TxHeader.TxFrameType = FDCAN_DATA_FRAME; // データフレーム
-  TxHeader.DataLength = FDCAN_DLC_BYTES_8; // DLC
-  TxHeader.ErrorStateIndicator = FDCAN_ESI_ACTIVE;
-  TxHeader.BitRateSwitch = FDCAN_BRS_OFF; // BRS設定
-  TxHeader.FDFormat = FDCAN_CLASSIC_CAN;  // Classic / FD
-  TxHeader.TxEventFifoControl = FDCAN_NO_TX_EVENTS;
-  TxHeader.MessageMarker = 0;
-  view2 = current[5];
-  tx_datas[0] = (current[4] >> 8);
-  tx_datas[1] = (current[4] & 0xFF);
-  tx_datas[2] = (current[5] >> 8);
-  tx_datas[3] = (current[5] & 0xFF);
-  tx_datas[4] = (current[6] >> 8);
-  tx_datas[5] = (current[6] & 0xFF);
-  tx_datas[6] = (current[7] >> 8);
-  tx_datas[7] = (current[7] & 0xFF);
-  if (HAL_FDCAN_GetTxFifoFreeLevel(&hfdcan2) > 0)
+  if (rm_counter_2 > 0)
   {
-    HAL_FDCAN_AddMessageToTxFifoQ(&hfdcan2, &TxHeader, tx_datas);
+    FDCAN_TxHeaderTypeDef TxHeader;
+    uint8_t tx_datas[64] = {0};
+    TxHeader.Identifier = 0x1FF;             // 送信ID
+    TxHeader.IdType = FDCAN_STANDARD_ID;     // 標準ID
+    TxHeader.TxFrameType = FDCAN_DATA_FRAME; // データフレーム
+    TxHeader.DataLength = FDCAN_DLC_BYTES_8; // DLC
+    TxHeader.ErrorStateIndicator = FDCAN_ESI_ACTIVE;
+    TxHeader.BitRateSwitch = FDCAN_BRS_OFF; // BRS設定
+    TxHeader.FDFormat = FDCAN_CLASSIC_CAN;  // Classic / FD
+    TxHeader.TxEventFifoControl = FDCAN_NO_TX_EVENTS;
+    TxHeader.MessageMarker = 0;
+    view2 = current[5];
+    tx_datas[0] = (current[4] >> 8);
+    tx_datas[1] = (current[4] & 0xFF);
+    tx_datas[2] = (current[5] >> 8);
+    tx_datas[3] = (current[5] & 0xFF);
+    tx_datas[4] = (current[6] >> 8);
+    tx_datas[5] = (current[6] & 0xFF);
+    tx_datas[6] = (current[7] >> 8);
+    tx_datas[7] = (current[7] & 0xFF);
+    if (HAL_FDCAN_GetTxFifoFreeLevel(&hfdcan2) > 0)
+    {
+      HAL_FDCAN_AddMessageToTxFifoQ(&hfdcan2, &TxHeader, tx_datas);
+    }
   }
 }
 

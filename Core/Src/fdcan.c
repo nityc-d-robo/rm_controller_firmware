@@ -23,6 +23,7 @@
 /* USER CODE BEGIN 0 */
 #include "math.h"
 #include <stdbool.h>
+#include <string.h>
 FDCAN_HandleTypeDef hfdcan1;
 FDCAN_HandleTypeDef hfdcan2;
 int8_t view_1;
@@ -377,32 +378,42 @@ void HAL_FDCAN_RxFifo0Callback(FDCAN_HandleTypeDef *hfdcan, uint32_t RxFifo0ITs)
       else if (((received_id >> 3) & 0x03) == rm_id)
       {
         uint8_t motor_id = (received_id & 0x07);
-        motorstate[motor_id].mode = RxData[0] & 0xF;
+        uint8_t packet_type = RxData[0];
 
-        if ((RxData[0] & 0xF0) == 0x10)
+        if (packet_type == 0x00)
         {
-          float value1 = (RxData[1] << 8) | RxData[2];
-          float value2 = (RxData[3] << 8) | RxData[4];
-          float value3 = (RxData[5] << 8) | RxData[6];
+          motorstate[motor_id].motor_type = RxData[1];
+          motorstate[motor_id].mode = RxData[2];
+        }
+        else if (packet_type == 0x02)
+        {
+          uint16_t value1 = (RxData[1] << 8) | RxData[2];
+          uint16_t value2 = (RxData[3] << 8) | RxData[4];
+          uint16_t value3 = (RxData[5] << 8) | RxData[6];
+          __fp16 half_value1;
+          memcpy(&half_value1, &value1, 2);
+          __fp16 half_value2;
+          memcpy(&half_value2, &value2, 2);
+          __fp16 half_value3;
+          memcpy(&half_value3, &value3, 2);
           if (motorstate[motor_id].mode == SPEED)
           {
-            motorstate[motor_id].speed.speed_gain.Kp = value1;
-            motorstate[motor_id].speed.speed_gain.Ki = value2;
-            motorstate[motor_id].speed.speed_gain.Kd = value3;
+            motorstate[motor_id].speed.speed_gain.Kp = half_value1;
+            motorstate[motor_id].speed.speed_gain.Ki = half_value2;
+            motorstate[motor_id].speed.speed_gain.Kd = half_value3;
           }
           else if (motorstate[motor_id].mode == ANGLE)
           {
-            motorstate[motor_id].angle.angle_gain.Kp = value1;
-            motorstate[motor_id].angle.angle_gain.Ki = value2;
-            motorstate[motor_id].angle.angle_gain.Kd = value3;
+            motorstate[motor_id].angle.angle_gain.Kp = half_value1;
+            motorstate[motor_id].angle.angle_gain.Ki = half_value2;
+            motorstate[motor_id].angle.angle_gain.Kd = half_value3;
           }
         }
-        else
+        else if (packet_type == 0x01)
         {
-          view = motorstate[motor_id].mode;
           if (motorstate[motor_id].mode == CURRENT)
           {
-            motorstate[motor_id].current = (int16_t)((RxData[1] << 8) | RxData[2]);
+            motorstate[motor_id].target_current = (int16_t)((RxData[1] << 8) | RxData[2]);
           }
           else if (motorstate[motor_id].mode == SPEED)
           {
@@ -410,8 +421,11 @@ void HAL_FDCAN_RxFifo0Callback(FDCAN_HandleTypeDef *hfdcan, uint32_t RxFifo0ITs)
           }
           else if (motorstate[motor_id].mode == ANGLE)
           {
+            uint16_t raw_target_angle = (RxData[1] << 8) | RxData[2];
             double pre_target_angle = motorstate[motor_id].angle.target_angle;
-            motorstate[motor_id].angle.target_angle = (float)((RxData[1] << 8) | RxData[2]);
+            __fp16 half_value;
+            memcpy(&half_value, &raw_target_angle, 2);
+            motorstate[motor_id].angle.target_angle = half_value;
             motorstate[motor_id].angle.half_target_angle = pre_target_angle - motorstate[motor_id].angle.target_angle;
           }
         }
@@ -530,6 +544,7 @@ void HAL_FDCAN_RxFifo1Callback(FDCAN_HandleTypeDef *hfdcan, uint32_t RxFifo1ITs)
       }
       motorstate[received_id - 1].angle.angle = fmod(motorstate[received_id - 1].angle.angle - motorstate[received_id - 1].angle.angle_zero, 360 * gear_ratio);
       if (motorstate[received_id - 1].angle.angle < 0)
+        ;
       {
         motorstate[received_id - 1].angle.angle += 360 * gear_ratio;
       }

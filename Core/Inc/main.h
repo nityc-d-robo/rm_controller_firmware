@@ -142,6 +142,7 @@ extern "C"
     Speed speed;
     int16_t resolution;
     int16_t current;
+    int16_t target_current;
     Sit sub_sit;
   } MotorState;
 
