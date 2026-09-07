@@ -169,18 +169,19 @@ void MX_FDCAN2_Init(void)
   /* USER CODE BEGIN FDCAN2_Init 2 */
   FDCAN_FilterTypeDef sFilter;
 
-  // 重要度が高い通信
-  sFilter.IdType = FDCAN_STANDARD_ID;
+  //@1
+  // ロボストライドからのデータ
+  sFilter.IdType = FDCAN_EXTENDED_ID;
   sFilter.FilterIndex = 0;
   sFilter.FilterType = FDCAN_FILTER_MASK;
   sFilter.FilterConfig = FDCAN_FILTER_TO_RXFIFO0;
-  sFilter.FilterID1 = 0xFFF;
-  sFilter.FilterID2 = 0xFFF;
+  sFilter.FilterID1 = 0x000;
+  sFilter.FilterID2 = 0x000;
   HAL_FDCAN_ConfigFilter(&hfdcan2, &sFilter);
 
-  // 重要度が低い通信(モータードライバからのデータ)
+  // ロボマスモーターからのデータ
   sFilter.IdType = FDCAN_STANDARD_ID;
-  sFilter.FilterIndex = 1;
+  sFilter.FilterIndex = 0;
   sFilter.FilterType = FDCAN_FILTER_RANGE;
   sFilter.FilterConfig = FDCAN_FILTER_TO_RXFIFO1;
   sFilter.FilterID1 = 0x201;
@@ -382,8 +383,46 @@ void HAL_FDCAN_RxFifo0Callback(FDCAN_HandleTypeDef *hfdcan, uint32_t RxFifo0ITs)
 
         if (packet_type == 0x00)
         {
+          motorstate[motor_id].speed.speed_pid_state.e_pre = 0;
+          motorstate[motor_id].speed.speed_pid_state.ie = 0;
           motorstate[motor_id].motor_type = RxData[1];
           motorstate[motor_id].mode = RxData[2];
+          if (RxData[1] == 2)
+          {
+            FDCAN_TxHeaderTypeDef TxHeader;
+            uint8_t tx_datas1[64] = {0};
+
+            TxHeader.Identifier = (0x3 << 24) | (0x0 << 8) | motor_id; // 送信ID
+            // TxHeader.Identifier = (0x3 << 24) | (0x0 << 8) | 0x7F; // 送信ID
+            TxHeader.IdType = FDCAN_EXTENDED_ID;     // 標準ID
+            TxHeader.TxFrameType = FDCAN_DATA_FRAME; // データフレーム
+            TxHeader.DataLength = FDCAN_DLC_BYTES_8; // DLC
+            TxHeader.ErrorStateIndicator = FDCAN_ESI_ACTIVE;
+            TxHeader.BitRateSwitch = FDCAN_BRS_OFF; // BRS設定
+            TxHeader.FDFormat = FDCAN_CLASSIC_CAN;  // Classic / FD
+            TxHeader.TxEventFifoControl = FDCAN_NO_TX_EVENTS;
+            TxHeader.MessageMarker = 0;
+            if (HAL_FDCAN_GetTxFifoFreeLevel(&hfdcan2) > 0)
+            {
+              HAL_FDCAN_AddMessageToTxFifoQ(&hfdcan2, &TxHeader, tx_datas1);
+            }
+            uint8_t tx_datas2[64] = {0};
+
+            tx_datas2[0] = 1;
+            TxHeader.Identifier = (0x6 << 24) | (0x0 << 8) | motor_id; // 送信ID
+            TxHeader.IdType = FDCAN_EXTENDED_ID;                       // 標準ID
+            TxHeader.TxFrameType = FDCAN_DATA_FRAME;                   // データフレーム
+            TxHeader.DataLength = FDCAN_DLC_BYTES_8;                   // DLC
+            TxHeader.ErrorStateIndicator = FDCAN_ESI_ACTIVE;
+            TxHeader.BitRateSwitch = FDCAN_BRS_OFF; // BRS設定
+            TxHeader.FDFormat = FDCAN_CLASSIC_CAN;  // Classic / FD
+            TxHeader.TxEventFifoControl = FDCAN_NO_TX_EVENTS;
+            TxHeader.MessageMarker = 0;
+            if (HAL_FDCAN_GetTxFifoFreeLevel(&hfdcan2) > 0)
+            {
+              HAL_FDCAN_AddMessageToTxFifoQ(&hfdcan2, &TxHeader, tx_datas2);
+            }
+          }
         }
         else if (packet_type == 0x02)
         {
@@ -411,22 +450,37 @@ void HAL_FDCAN_RxFifo0Callback(FDCAN_HandleTypeDef *hfdcan, uint32_t RxFifo0ITs)
         }
         else if (packet_type == 0x01)
         {
-          if (motorstate[motor_id].mode == CURRENT)
+          if (motorstate[motor_id].can_move < 1 && motorstate[motor_id].motor_type == 1)
           {
-            motorstate[motor_id].target_current = (int16_t)((RxData[1] << 8) | RxData[2]);
+            // 無視
           }
-          else if (motorstate[motor_id].mode == SPEED)
+          else
           {
-            motorstate[motor_id].speed.target_rpm = (int16_t)((RxData[1] << 8) | RxData[2]) * gear_ratio;
-          }
-          else if (motorstate[motor_id].mode == ANGLE)
-          {
-            uint16_t raw_target_angle = (RxData[1] << 8) | RxData[2];
-            double pre_target_angle = motorstate[motor_id].angle.target_angle;
-            __fp16 half_value;
-            memcpy(&half_value, &raw_target_angle, 2);
-            motorstate[motor_id].angle.target_angle = half_value;
-            motorstate[motor_id].angle.half_target_angle = pre_target_angle - motorstate[motor_id].angle.target_angle;
+            if (motorstate[motor_id].mode == CURRENT)
+            {
+              motorstate[motor_id].target_current = (int16_t)((RxData[1] << 8) | RxData[2]);
+            }
+            else if (motorstate[motor_id].mode == SPEED)
+            {
+              motorstate[motor_id].r_speed_cnt = 500; // 1s
+              if (motorstate[motor_id].motor_type == 1)
+              {
+                motorstate[motor_id].speed.target_rpm = (int16_t)((RxData[1] << 8) | RxData[2]) * gear_ratio;
+              }
+              else
+              {
+                motorstate[motor_id].speed.target_rpm = (int16_t)((RxData[1] << 8) | RxData[2]);
+              }
+            }
+            else if (motorstate[motor_id].mode == ANGLE)
+            {
+              uint16_t raw_target_angle = (RxData[1] << 8) | RxData[2];
+              double pre_target_angle = motorstate[motor_id].angle.target_angle;
+              __fp16 half_value;
+              memcpy(&half_value, &raw_target_angle, 2);
+              motorstate[motor_id].angle.target_angle = half_value;
+              motorstate[motor_id].angle.half_target_angle = pre_target_angle - motorstate[motor_id].angle.target_angle;
+            }
           }
         }
       }
@@ -472,7 +526,18 @@ void HAL_FDCAN_RxFifo0Callback(FDCAN_HandleTypeDef *hfdcan, uint32_t RxFifo0ITs)
     }
     else if (hfdcan->Instance == FDCAN2)
     {
-      // --- FDCAN2 の処理 ---
+      // --- ロボストライド受信 の処理 ---
+      uint16_t type = RxHeader.Identifier >> 24 & 0x1F;
+      if (type == 2)
+      {
+        uint16_t mode = RxHeader.Identifier >> 22 & 0x3;
+        uint16_t fault = RxHeader.Identifier >> 16 & 0x3F;
+        uint16_t motor_id = RxHeader.Identifier >> 8 & 0xFF;
+        if (fault == 0 && mode == 2)
+        {
+          motorstate[motor_id].can_move = 250; // 0.5s
+        }
+      }
     }
   }
 }
@@ -498,7 +563,8 @@ void HAL_FDCAN_RxFifo1Callback(FDCAN_HandleTypeDef *hfdcan, uint32_t RxFifo1ITs)
       uint32_t received_id = RxHeader.Identifier & 0x00F;
       uint16_t angle_raw = (RxData[0] << 8) | RxData[1];
       now_rpm = (RxData[2] << 8) | RxData[3];
-      // for(int i = 4; i > 0; i--) {
+      // for(int i = 4; i > 0; i--) {	0x003F0000	4128768
+
       //   if (motorstate[received_id - 1].sub_sit == Stop)
       //   {
       //     rpms[i] = (RxData[2] << 8) | RxData[3];
@@ -512,7 +578,8 @@ void HAL_FDCAN_RxFifo1Callback(FDCAN_HandleTypeDef *hfdcan, uint32_t RxFifo1ITs)
       //   rpms_sum += rpms[i];
       // }
       // motorstate[received_id - 1].rpm = (float)rpms_sum / 5.0f;
-      motorstate[received_id - 1].speed.rpm = now_rpm * alpha + motorstate[received_id - 1].speed.rpm * (1 - alpha);
+      float new_rpm = now_rpm * alpha + motorstate[received_id - 1].speed.rpm * (1 - alpha);
+      motorstate[received_id - 1].speed.rpm = new_rpm;
       motorstate[received_id - 1].angle.raw_angle = (float)angle_raw * 360.0f / 8192.0f;
       motorstate[received_id - 1].current = (RxData[4] << 8) | RxData[5];
       float diff = motorstate[received_id - 1].angle.raw_angle - motorstate[received_id - 1].angle.pre_raw_angle;
@@ -542,9 +609,9 @@ void HAL_FDCAN_RxFifo1Callback(FDCAN_HandleTypeDef *hfdcan, uint32_t RxFifo1ITs)
         motorstate[received_id - 1].sub_sit = Move;
         motorstate[received_id - 1].angle.angle_zero = motorstate[received_id - 1].angle.angle;
       }
+      motorstate[received_id - 1].can_move = 250; // 0.5s
       motorstate[received_id - 1].angle.angle = fmod(motorstate[received_id - 1].angle.angle - motorstate[received_id - 1].angle.angle_zero, 360 * gear_ratio);
       if (motorstate[received_id - 1].angle.angle < 0)
-        ;
       {
         motorstate[received_id - 1].angle.angle += 360 * gear_ratio;
       }
