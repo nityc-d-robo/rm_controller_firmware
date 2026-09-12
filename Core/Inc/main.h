@@ -83,6 +83,8 @@ void Error_Handler(void);
 #define MAX_ANGLE_IE 1500
 #define I_MAX_ERROR 500.0f
 #define I_MIN_ERROR 5.0f
+#define gear_ratio 19.204f
+#define alpha 0.2f
 
   typedef enum
   {
@@ -142,9 +144,9 @@ void Error_Handler(void);
     int16_t resolution;
     int16_t current;
     int16_t target_current;
-    int16_t can_move;
+    int16_t motor_can_move;
     Sit sub_sit;
-    int16_t r_speed_cnt;
+    int16_t main_can_move;
   } MotorState;
 
 /* USER CODE END Private defines */
