@@ -1,21 +1,21 @@
 /* USER CODE BEGIN Header */
 /**
- ******************************************************************************
- * @file           : main.h
- * @brief          : Header for main.c file.
- *                   This file contains the common defines of the application.
- ******************************************************************************
- * @attention
- *
- * Copyright (c) 2026 STMicroelectronics.
- * All rights reserved.
- *
- * This software is licensed under terms that can be found in the LICENSE file
- * in the root directory of this software component.
- * If no LICENSE file comes with this software, it is provided AS-IS.
- *
- ******************************************************************************
- */
+  ******************************************************************************
+  * @file           : main.h
+  * @brief          : Header for main.c file.
+  *                   This file contains the common defines of the application.
+  ******************************************************************************
+  * @attention
+  *
+  * Copyright (c) 2026 STMicroelectronics.
+  * All rights reserved.
+  *
+  * This software is licensed under terms that can be found in the LICENSE file
+  * in the root directory of this software component.
+  * If no LICENSE file comes with this software, it is provided AS-IS.
+  *
+  ******************************************************************************
+  */
 /* USER CODE END Header */
 
 /* Define to prevent recursive inclusion -------------------------------------*/
@@ -73,79 +73,6 @@ void Error_Handler(void);
 #define FDCAN1_Tx_GPIO_Port GPIOA
 
 /* USER CODE BEGIN Private defines */
-
-#define GEAR_RATIO 19.204f
-#define ENCODER_RESOLUTION 8192.0f
-#define RESOLUTION 6913
-#define MAX_RPM 3000
-#define MAX_POWER 7500
-#define MAX_SPEED_IE 1500
-#define MAX_ANGLE_IE 1500
-#define I_MAX_ERROR 500.0f
-#define I_MIN_ERROR 5.0f
-
-  typedef enum
-  {
-    INIT,
-    STATUS,
-    CURRENT,
-    SPEED,
-    ANGLE,
-  } mode;
-
-  typedef struct
-  {
-    float ie;
-    float e_pre;
-  } PIDState;
-
-  typedef enum
-  {
-    Stop,
-    Move,
-  } Sit;
-
-  typedef struct
-  {
-    float Kp;
-    float Ki;
-    float Kd;
-  } Gain;
-
-  typedef struct
-  {
-    float angle;
-    float target_angle;
-    PIDState angle_pid_state;
-    float pre_angle;
-    float pre_raw_angle;
-    float raw_angle;
-    float half_target_angle;
-    int16_t angle_zero;
-    Gain angle_gain;
-  } Angle;
-
-  typedef struct
-  {
-    int16_t rpm;
-    int16_t target_rpm;
-    PIDState speed_pid_state;
-    Gain speed_gain;
-  } Speed;
-
-  typedef struct
-  {
-    int16_t motor_type;
-    mode mode;
-    Angle angle;
-    Speed speed;
-    int16_t resolution;
-    int16_t current;
-    int16_t target_current;
-    int16_t can_move;
-    Sit sub_sit;
-    int16_t r_speed_cnt;
-  } MotorState;
 
 /* USER CODE END Private defines */
 
