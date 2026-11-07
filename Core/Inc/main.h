@@ -75,7 +75,8 @@ void Error_Handler(void);
 /* USER CODE BEGIN Private defines */
 #define GEAR_RATIO 19.204f
 #define ENCODER_RESOLUTION 8192.0f
-#define alpha 0.02f //0.2fから変更
+#define current_alpha 0.2f
+#define rpm_alpha 0.2f //0.2fから変更
 #define rpms_alpha 0.2f
 #define T_6 0.004f //t_6周期
 #define T_16 0.008f //t_16周期
@@ -87,12 +88,13 @@ void Error_Handler(void);
 #define RM_MIN_RPM (-RM_MAX_RPM)
 #define RS_MAX_RPM 450
 #define RS_MIN_RPM (-RS_MAX_RPM)
-#define RESOLUTION 6913.0f
+#define RESOLUTION (360.0f * GEAR_RATIO)
 #define MAX_RAD_S 50
 #define MIN_RAD_S (-MAX_RAD_S)
 #define C_value -0.1f
 #define D_value 0.1f
-#define margin 300
+#define margin 2500
+#define RX_BUFFER_SIZE 16
 
 typedef enum
 {
@@ -117,8 +119,17 @@ typedef struct
   uint8_t rx_data[8];
 } RxData;
 
+typedef struct
+{
+  RxData data[RX_BUFFER_SIZE];
+  uint8_t write_idx;
+  uint8_t read_idx;
+  uint8_t count;
+} RingBuffer;
+
 typedef struct{
-  RxData main_rx[8]; //メインからの命令
+  RxData main_rx[8]; //メインからの命令(value)
+  RingBuffer main_rx_init; //メインからの命令(init/gain)
   RxData rm_rx[8]; //ロボマスからのフィードバック
   RxData rs_rx[8]; //ロボストライドからのフィードバック
 } RxDatas;
@@ -132,14 +143,14 @@ typedef struct{
   int16_t rpm;
   int16_t pre_rpm; //追加
   int16_t target_rpm;
-  int16_t pre_alpha;
+  int16_t pre_alpha; //速度の変化を読む
   Gain speed_gain;
   PIDState speed_pid_state;
 } Speed;
 
 typedef struct{
   float angle;
-  float angle_zero;
+  float angle_zero; //ゼロ位置
   float target_angle;
   float pre_angle_360;
   int16_t resolution;

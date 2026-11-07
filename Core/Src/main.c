@@ -56,13 +56,8 @@ int16_t can2_reset_cooltime = 0;
 volatile int16_t main_can_move = 0; //mainとcan通信ができているか
 uint8_t rm_id = 0;
 Gain rm_angle_gain = {.Kp = 0.6f, .Ki = 0.3f, .Kd = 0.0f};
-Gain rm_speed_gain = {.Kp = 2.0f, .Ki = 2.0f, .Kd = 0.0f};
+Gain rm_speed_gain = {.Kp = 10.0f, .Ki = 40.0f, .Kd = 0.0f}; //I=30.0
 Gain rs_angle_gain = {.Kp = 0.0f, .Ki = 0.0f, .Kd = 0.0f};
-volatile int16_t view1 = 0;
-volatile int16_t view2 = 0;
-volatile int16_t view3 = 0;
-volatile int16_t view4 = 0;
-volatile int16_t view5 = 0;
 uint32_t t_count = 0;
 /* USER CODE END PV */
 
@@ -81,6 +76,7 @@ void gain_init(uint8_t motor_id,int8_t motor_type);
 int16_t rm_move(int i,bool *rm_send1,bool *rm_send2);
 void rs_move(int i);
 float pid(int i, Mode mode);
+void main_rx_init(void);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -146,12 +142,18 @@ int main(void)
       can2_reset_cooltime = 25;
     }
     //CAN受信の処理
+
+    //メインからの受信(init/gain)
+    if (rx_datas.main_rx_init.write_idx != rx_datas.main_rx_init.read_idx) {
+      main_rx_init();
+    }
     for (int i = 0; i < 8; i++) {
-      //メインからの受信
+      //メインからの受信(value)
       if (rx_datas.main_rx[i].rx_flag == true) {
         rx_datas.main_rx[i].rx_flag = false;
         main_rx(i);
       }
+
       //ロボマスからの受信
       if (rx_datas.rm_rx[i].rx_flag == true) {
         rx_datas.rm_rx[i].rx_flag = false;
@@ -216,6 +218,16 @@ void SystemClock_Config(void)
 }
 
 /* USER CODE BEGIN 4 */
+bool dequeue(volatile RingBuffer *rb,uint8_t *data,uint32_t *id) {
+  if (rb->count == 0) {
+    return false;
+  }
+  *id = rb->data[rb->read_idx].rx_id;
+  memcpy(data,(const void *)rb->data[rb->read_idx].rx_data,8);
+  rb->read_idx = (rb->read_idx + 1) % RX_BUFFER_SIZE;
+  rb->count--;
+  return true;
+}
 
 void can_send(uint32_t id,uint8_t *tx_data,uint8_t id_type,uint8_t channel) {
   FDCAN_TxHeaderTypeDef TxHeader;
@@ -265,14 +277,17 @@ void rs_init(uint8_t motor_id) {
   can_send((0x6 << 24) | (0x0 << 8) | motor_id,tx_datas,1,1);
 }
 
-void main_rx(uint8_t motor_id) {
+void main_rx_init() {
   __disable_irq();
   uint8_t rx_data[8] = {0};
-  uint32_t rx_id = rx_datas.main_rx[motor_id].rx_id;
-  memcpy(rx_data,rx_datas.main_rx[motor_id].rx_data, 8);
+  uint32_t rx_id;
+  if (dequeue(&rx_datas.main_rx_init,&rx_data[0],&rx_id) == false) {
+    __enable_irq();
+    return;
+  }
   __enable_irq();
+  uint8_t motor_id = rx_id;
   uint8_t packet_type = rx_data[0];
-
   if (packet_type == 0x00) {
     //init処理
     motorstate[motor_id].speed.speed_pid_state.e_pre = 0;
@@ -282,31 +297,6 @@ void main_rx(uint8_t motor_id) {
     gain_init(motor_id,motorstate[motor_id].motor_type);
     if (rx_data[1] == 2) {
       rs_init(motor_id);   //ロボストライド用のinit処理
-    }
-  } else if (packet_type == 0x01) {
-    HAL_GPIO_WritePin(LED_3_GPIO_Port, LED_3_Pin, GPIO_PIN_SET);
-    //値を受け取る処理
-    if (motorstate[motor_id].motor_can_move < 1) {
-      return;
-    }
-    main_can_move = 125;
-    if (motorstate[motor_id].mode == CURRENT) {
-      motorstate[motor_id].current.target_current = (int16_t)((rx_data[1] << 8) | rx_data[2]);
-    } else if (motorstate[motor_id].mode == SPEED) {
-      if (motorstate[motor_id].motor_type == 1) {
-        motorstate[motor_id].speed.target_rpm = (int16_t)((rx_data[1] << 8) | rx_data[2]) * GEAR_RATIO;     //もしロボマスなら、ギア比をかける
-      } else {
-        motorstate[motor_id].speed.target_rpm = (int16_t)((rx_data[1] << 8) | rx_data[2]);
-      }
-    } else if (motorstate[motor_id].mode == ANGLE) {
-      uint16_t raw_target_angle = (rx_data[1] << 8) | rx_data[2];
-      __fp16 half_value;
-      memcpy(&half_value,&raw_target_angle,2);
-      if (motorstate[motor_id].motor_type == 1) {
-        motorstate[motor_id].angle.target_angle = half_value * GEAR_RATIO;     //もしロボマスなら、ギア比をかける
-      } else {
-        motorstate[motor_id].angle.target_angle = half_value;
-      }
     }
   } else if (packet_type == 0x02) {
     //ゲインを変更
@@ -334,6 +324,40 @@ void main_rx(uint8_t motor_id) {
   }
 }
 
+void main_rx(uint8_t motor_id) {
+  __disable_irq();
+  uint8_t rx_data[8] = {0};
+  uint32_t rx_id = rx_datas.main_rx[motor_id].rx_id;
+  memcpy(rx_data,rx_datas.main_rx[motor_id].rx_data, 8);
+  __enable_irq();
+  uint8_t packet_type = rx_data[0];
+
+    HAL_GPIO_WritePin(LED_3_GPIO_Port, LED_3_Pin, GPIO_PIN_SET);
+    //値を受け取る処理
+    if (motorstate[motor_id].motor_can_move < 1) {
+      return;
+    }
+    main_can_move = 125;
+    if (motorstate[motor_id].mode == CURRENT) {
+      motorstate[motor_id].current.target_current = (int16_t)((rx_data[1] << 8) | rx_data[2]);
+    } else if (motorstate[motor_id].mode == SPEED) {
+      if (motorstate[motor_id].motor_type == 1) {
+        motorstate[motor_id].speed.target_rpm = (int16_t)((rx_data[1] << 8) | rx_data[2]) * GEAR_RATIO;     //もしロボマスなら、ギア比をかける
+      } else {
+        motorstate[motor_id].speed.target_rpm = (int16_t)((rx_data[1] << 8) | rx_data[2]);
+      }
+    } else if (motorstate[motor_id].mode == ANGLE) {
+      uint16_t raw_target_angle = (rx_data[1] << 8) | rx_data[2];
+      __fp16 half_value;
+      memcpy(&half_value,&raw_target_angle,2);
+      if (motorstate[motor_id].motor_type == 1) {
+        motorstate[motor_id].angle.target_angle = half_value * GEAR_RATIO;     //もしロボマスなら、ギア比をかける
+      } else {
+        motorstate[motor_id].angle.target_angle = half_value;
+      }
+    }
+}
+
 void rm_rx(uint8_t motor_id) {
   __disable_irq();
   uint8_t rx_data[8] = {0};
@@ -343,12 +367,12 @@ void rm_rx(uint8_t motor_id) {
 
   //currentを取得
   int16_t now_current = (rx_data[4] << 8) | rx_data[5];
-  float new_current = now_current * alpha + motorstate[motor_id].current.current * (1 - alpha);
+  float new_current = now_current * current_alpha + motorstate[motor_id].current.current * (1 - current_alpha);
   motorstate[motor_id].current.current = (int16_t)new_current;
   
   //speedを取得
   int16_t now_rpm = (rx_data[2] << 8) | rx_data[3];
-  float new_rpm = now_rpm * alpha + motorstate[motor_id].speed.rpm * (1 - alpha);
+  float new_rpm = now_rpm * rpm_alpha + motorstate[motor_id].speed.rpm * (1 - rpm_alpha);
   motorstate[motor_id].speed.rpm = (int16_t)new_rpm;
 
   //angleを取得
@@ -367,7 +391,7 @@ void rm_rx(uint8_t motor_id) {
     motorstate[motor_id].angle.angle_zero = motorstate[motor_id].angle.angle;
   }
   motorstate[motor_id].motor_can_move = 125;
-  motorstate[motor_id].angle.angle = fmod(motorstate[motor_id].angle.angle - motorstate[motor_id].angle.angle_zero,360 * GEAR_RATIO);
+  motorstate[motor_id].angle.angle = fmodf(motorstate[motor_id].angle.angle - motorstate[motor_id].angle.angle_zero,360 * GEAR_RATIO);
   if (motorstate[motor_id].angle.angle < 0) {
     motorstate[motor_id].angle.angle += 360 * GEAR_RATIO;
   }
@@ -593,34 +617,37 @@ void speed_pid_task(void) {
     if (motorstate[i].motor_type == 1) {
       current[i] = rm_move(i,&rm_send1,&rm_send2);
       //滑り検知//
+      /*
       if (t_count > 5) {
-        int16_t masatu;
-        if (abs(motorstate[i].speed.rpm) > 0) {
-          masatu = 110;
-        }
-        int32_t now_alpha = ( motorstate[i].speed.pre_rpm - motorstate[i].speed.rpm ) / (T_6 * t_count);
+        int16_t masatu = 0;
+
+        float now_alpha = ( motorstate[i].speed.pre_rpm - motorstate[i].speed.rpm ) / (T_6 * t_count);
         float new_alpha = now_alpha * rpms_alpha + motorstate[i].speed.pre_alpha * (1 - rpms_alpha);
-        int16_t alpha_meas = new_alpha;
-        int16_t alpha_exp = (int16_t)((float)alpha_meas * C_value + (float)motorstate[i].speed.rpm * D_value + (float)masatu);
+        float alpha_meas = new_alpha;
+        int8_t sign = (motorstate[i].current.current > 0) - (motorstate[i].current.current < 0);
+        int8_t rpm_sign = (motorstate[i].speed.rpm > 0) - (motorstate[i].speed.rpm < 0);
+        if (abs(motorstate[i].speed.rpm) > 0) {
+          masatu = 600 * sign;
+        }
+        int16_t alpha_exp = (int16_t)(alpha_meas * C_value + (float)motorstate[i].speed.rpm * D_value + (float)masatu);
         motorstate[i].speed.pre_alpha = alpha_meas;
         if (i == 0) {
-          view1 = alpha_meas / -10 + motorstate[i].speed.rpm / 10 + masatu;
-          view2 = alpha_exp;
-        } else if (i == 1) {
-          //view2 = alpha_meas / -10;
-        } else if (i == 2) {
-          view3 = alpha_meas / -10;
-        } else if (i == 3) {
-          view4 = alpha_meas / -10;
-          t_count = 0;
+          view1 = (int16_t)(alpha_meas / -1.0f + (float)(motorstate[i].speed.rpm / 10 + masatu)); //並進は*-2,旋回は/-1
+          //view1 = alpha_exp;
+          if ( sign * (view1 - motorstate[i].current.current) > margin && sign == rpm_sign) {
+            //滑り
+            view5 = 1000;
+          } else {
+            view5 = 0;
+          }
         }
-        int8_t sign = (alpha_meas > 0) - (alpha_meas < 0);
-        if ( sign * (alpha_exp - alpha_meas) > margin ) {
+        if ( sign * (alpha_exp - motorstate[i].current.current) > margin ) {
           //滑り
-          view5 = sign * (alpha_exp - alpha_meas);
         }
         motorstate[i].speed.pre_rpm = motorstate[i].speed.rpm;
+        t_count = 0;
       }
+      */
       //滑り検知//
     } else if (motorstate[i].motor_type == 2 && (motorstate[i].mode == SPEED || motorstate[i].mode == ANGLE)) {
       rs_move(i);

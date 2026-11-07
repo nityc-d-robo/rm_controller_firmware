@@ -19,6 +19,7 @@
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
 #include "fdcan.h"
+#include "main.h"
 #include "stm32g4xx_hal_fdcan.h"
 
 /* USER CODE BEGIN 0 */
@@ -327,6 +328,7 @@ void HAL_FDCAN_MspDeInit(FDCAN_HandleTypeDef* fdcanHandle)
 }
 
 /* USER CODE BEGIN 1 */
+
 void HAL_FDCAN_RxFifo0Callback(FDCAN_HandleTypeDef *hfdcan, uint32_t RxFifo0ITs)
 {
   FDCAN_RxHeaderTypeDef RxHeader;
@@ -351,6 +353,16 @@ void HAL_FDCAN_RxFifo0Callback(FDCAN_HandleTypeDef *hfdcan, uint32_t RxFifo0ITs)
   }
 }
 
+void enqueue(volatile RingBuffer *rb,uint32_t id,uint8_t data[8]) {
+  if (rb->count == RX_BUFFER_SIZE) {
+    return;
+  }
+  rb->data[rb->write_idx].rx_id = id;
+  memcpy((void *)rb->data[rb->write_idx].rx_data, data,8);
+  rb->write_idx = (rb->write_idx + 1) % RX_BUFFER_SIZE;
+  rb->count++;
+}
+
 void HAL_FDCAN_RxFifo1Callback(FDCAN_HandleTypeDef *hfdcan, uint32_t RxFifo1ITs)
 {
   FDCAN_RxHeaderTypeDef RxHeader;
@@ -367,9 +379,15 @@ void HAL_FDCAN_RxFifo1Callback(FDCAN_HandleTypeDef *hfdcan, uint32_t RxFifo1ITs)
       //Tx用
       uint8_t received_id = RxHeader.Identifier & 0x07;
       if (((RxHeader.Identifier >> 3) & 0x03) == rm_id) {
-        rx_datas.main_rx[received_id].rx_flag = true;
-        rx_datas.main_rx[received_id].rx_id = RxHeader.Identifier;
-        memcpy(rx_datas.main_rx[received_id].rx_data, RxData, 8);
+        if (RxData[0] == 0x0 || RxData[0] == 0x2) {
+          //init or gain
+          enqueue(&rx_datas.main_rx_init,received_id,RxData);
+        } else if (RxData[0] == 0x1) {
+          //value
+          rx_datas.main_rx[received_id].rx_flag = true;
+          rx_datas.main_rx[received_id].rx_id = RxHeader.Identifier;
+          memcpy(rx_datas.main_rx[received_id].rx_data, RxData, 8);
+        }
       }
     } else {
       //ロボストライドモーターの受信
